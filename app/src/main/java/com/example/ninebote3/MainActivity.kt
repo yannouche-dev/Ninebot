@@ -34,7 +34,8 @@ class MainActivity : Activity() {
         private const val REGISTER_TIMEOUT_MS = 2_500L
         private const val INIT_TIMEOUT_MS = 1_800L
         private const val INIT_MAX_ATTEMPTS = 4
-        private const val BUILD_ID = "r6-init-retry"
+        private const val PROTOCOL_PROBE_TIMEOUT_MS = 1_500L
+        private const val BUILD_ID = "r7-auto-protocol"
 
         private val UUID_NUS_SERVICE = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
         private val UUID_NUS_RX = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9e")
@@ -60,6 +61,10 @@ class MainActivity : Activity() {
 
     private enum class AuthState {
         IDLE, INIT_SENT, WAIT_PAIR, PAIR_SENT, AUTHENTICATED, FAILED
+    }
+
+    private enum class ProtocolMode {
+        UNKNOWN, PROBING_LEGACY, LEGACY_55AA, ENCRYPTED_5AA5
     }
 
     private lateinit var statusView: TextView
@@ -88,6 +93,7 @@ class MainActivity : Activity() {
     private var protocolName = "Ninebot"
     private var initAttempt = 0
     private var useWriteNoResponse = false
+    private var protocolMode = ProtocolMode.UNKNOWN
 
     private val encryptedRxBuffer = ByteArrayOutputStream()
     private val writeChunks = ArrayDeque<ByteArray>()
@@ -120,6 +126,14 @@ class MainActivity : Activity() {
                 handler.postDelayed(this, PAIR_RETRY_MS)
             }
         }
+    }
+
+    private val protocolProbeTimeout = Runnable {
+        if (protocolMode != ProtocolMode.PROBING_LEGACY) return@Runnable
+        appendLog("No 55 AA response; falling back to encrypted 5A A5 protocol.")
+        protocolMode = ProtocolMode.ENCRYPTED_5AA5
+        useWriteNoResponse = false
+        gatt?.let { beginAuthentication(it) }
     }
 
     private val initTimeout = Runnable {
@@ -177,7 +191,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(TextView(this).apply {
-            text = "Ninebot E3 Pro Controller · r6"
+            text = "Ninebot E3 Pro Controller · r7"
             textSize = 24f
         })
 
@@ -441,7 +455,9 @@ class MainActivity : Activity() {
         handler.removeCallbacks(pairRetry)
         handler.removeCallbacks(registerTimeout)
         handler.removeCallbacks(initTimeout)
+        handler.removeCallbacks(protocolProbeTimeout)
         authState = AuthState.IDLE
+        protocolMode = ProtocolMode.UNKNOWN
         crypto = null
         scooterSerial = null
         nusRx = null
@@ -543,7 +559,7 @@ class MainActivity : Activity() {
                 if (descriptor.uuid != UUID_CCCD) return@post
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     appendLog("✓ NUS TX notifications enabled.")
-                    beginAuthentication(g)
+                    beginProtocolDetection(g)
                 } else {
                     appendLog("Notification subscription failed. status=" + status)
                     setStatus("Notification setup failed")
@@ -598,6 +614,164 @@ class MainActivity : Activity() {
             }
         }
         appendLog(out.toString())
+    }
+
+    private fun beginProtocolDetection(g: BluetoothGatt) {
+        handler.removeCallbacks(protocolProbeTimeout)
+        protocolMode = ProtocolMode.PROBING_LEGACY
+        useWriteNoResponse = true
+        setStatus("Detecting Ninebot protocol…")
+        appendLog("PROBE legacy 55 AA · read firmware register 0x1A")
+        sendLegacyRead(0x1A, 2)
+        handler.postDelayed(protocolProbeTimeout, PROTOCOL_PROBE_TIMEOUT_MS)
+    }
+
+    private fun sendLegacyRead(index: Int, byteCount: Int) {
+        sendLegacyFrame(0x01, index, byteArrayOf(byteCount.toByte()))
+    }
+
+    private fun sendLegacyWrite(index: Int, rawValue: Int) {
+        val payload = byteArrayOf(
+            (rawValue and 0xff).toByte(),
+            ((rawValue shr 8) and 0xff).toByte()
+        )
+        sendLegacyFrame(0x03, index, payload)
+    }
+
+    private fun sendLegacyFrame(command: Int, index: Int, payload: ByteArray) {
+        val body = ByteArray(4 + payload.size)
+        body[0] = (payload.size + 2).toByte()
+        body[1] = 0x20
+        body[2] = command.toByte()
+        body[3] = index.toByte()
+        payload.copyInto(body, 4)
+
+        var sum = 0
+        for (b in body) sum += b.toInt() and 0xff
+        val checksum = sum.inv() and 0xffff
+
+        val frame = ByteArray(2 + body.size + 2)
+        frame[0] = 0x55
+        frame[1] = 0xAA.toByte()
+        body.copyInto(frame, 2)
+        frame[frame.size - 2] = (checksum and 0xff).toByte()
+        frame[frame.size - 1] = ((checksum shr 8) and 0xff).toByte()
+
+        appendLog(
+            "TX 55AA cmd=0x" + command.toString(16).uppercase() +
+                " idx=0x" + index.toString(16).uppercase() +
+                " · " + packetSummary(frame)
+        )
+
+        useWriteNoResponse = true
+        enqueueGattFrame(frame)
+    }
+
+    private fun handleLegacyFrame(frame: ByteArray) {
+        if (frame.size < 8 || frame[0] != 0x55.toByte() || frame[1] != 0xAA.toByte()) {
+            appendLog("Invalid 55 AA frame.")
+            return
+        }
+
+        val lengthField = frame[2].toInt() and 0xff
+        val expectedSize = lengthField + 6
+        if (frame.size < expectedSize) {
+            appendLog("Incomplete 55 AA frame: got=" + frame.size + " expected=" + expectedSize)
+            return
+        }
+
+        var sum = 0
+        for (i in 2 until expectedSize - 2) sum += frame[i].toInt() and 0xff
+        val checksum = sum.inv() and 0xffff
+        val receivedChecksum =
+            (frame[expectedSize - 2].toInt() and 0xff) or
+                ((frame[expectedSize - 1].toInt() and 0xff) shl 8)
+
+        if (checksum != receivedChecksum) {
+            appendLog(
+                "55 AA checksum mismatch calc=0x" + checksum.toString(16).uppercase() +
+                    " recv=0x" + receivedChecksum.toString(16).uppercase()
+            )
+            return
+        }
+
+        handler.removeCallbacks(protocolProbeTimeout)
+        if (protocolMode != ProtocolMode.LEGACY_55AA) {
+            protocolMode = ProtocolMode.LEGACY_55AA
+            authState = AuthState.AUTHENTICATED
+            appendLog("✓ Legacy Ninebot 55 AA protocol detected.")
+            setStatus("✓ Connected · legacy Ninebot protocol")
+        }
+
+        val device = frame[3].toInt() and 0xff
+        val command = frame[4].toInt() and 0xff
+        val index = frame[5].toInt() and 0xff
+        val dataLength = maxOf(0, lengthField - 2)
+        val dataEnd = minOf(6 + dataLength, expectedSize - 2)
+        val data = if (dataEnd > 6) frame.copyOfRange(6, dataEnd) else byteArrayOf()
+
+        appendLog(
+            "RX 55AA dev=0x" + device.toString(16).uppercase() +
+                " cmd=0x" + command.toString(16).uppercase() +
+                " idx=0x" + index.toString(16).uppercase() +
+                " data=" + packetSummary(data)
+        )
+
+        if (command != 0x01) return
+
+        when (index) {
+            0x1A -> {
+                appendLog("Legacy firmware probe answered; reading speed register 0x73.")
+                sendLegacyRead(REG_NORMAL_SPEED, 4)
+            }
+
+            REG_NORMAL_SPEED -> handleLegacySpeedRead(data)
+        }
+    }
+
+    private fun handleLegacySpeedRead(data: ByteArray) {
+        if (data.size < 2) {
+            sportStatusView.text = "Speed register response too short"
+            return
+        }
+
+        val raw = (data[0].toInt() and 0xff) or ((data[1].toInt() and 0xff) shl 8)
+        val currentKmh = raw / 1000.0
+        registerRaw[REG_NORMAL_SPEED] = raw
+
+        val limitedRaw = if (data.size >= 4) {
+            (data[2].toInt() and 0xff) or ((data[3].toInt() and 0xff) shl 8)
+        } else null
+
+        appendLog(
+            "LEGACY speed 0x73 raw=" + raw +
+                " = " + formatSpeed(currentKmh) + " km/h" +
+                if (limitedRaw != null) " · 0x74 raw=" + limitedRaw else ""
+        )
+
+        val target = pendingTargetKmh
+        if (target != null) {
+            pendingTargetKmh = null
+            if (abs(currentKmh - target) <= 0.6) {
+                markSportConfirmed(target)
+            } else {
+                sportStatusView.text =
+                    "✗ Requested " + target + ", scooter reports " +
+                        formatSpeed(currentKmh) + " km/h"
+                appendLog(
+                    "SPORT verification failed: requested=" + target +
+                        " readback=" + currentKmh
+                )
+                updateSportButtons()
+            }
+            return
+        }
+
+        sportStatusView.text =
+            "Current Sport limit ≈ " + formatSpeed(currentKmh) +
+                " km/h · legacy 55 AA"
+        updateSportButtons()
+        setStatus("✓ Connected · 25/32 control ready")
     }
 
     private fun beginAuthentication(g: BluetoothGatt) {
@@ -723,8 +897,14 @@ class MainActivity : Activity() {
     }
 
     private fun handleNotification(value: ByteArray) {
-        if (authState == AuthState.INIT_SENT) handler.removeCallbacks(initTimeout)
         appendLog("RX NUS RAW · " + packetSummary(value))
+
+        if (value.size >= 2 && value[0] == 0x55.toByte() && value[1] == 0xAA.toByte()) {
+            handleLegacyFrame(value)
+            return
+        }
+
+        if (authState == AuthState.INIT_SENT) handler.removeCallbacks(initTimeout)
 
         if (encryptedRxBuffer.size() == 0 &&
             (value.size < 2 || value[0] != 0x5A.toByte() || value[1] != 0xA5.toByte())
@@ -980,6 +1160,16 @@ class MainActivity : Activity() {
     }
 
     private fun updateSportButtons() {
+        if (protocolMode == ProtocolMode.LEGACY_55AA) {
+            val ready =
+                authState == AuthState.AUTHENTICATED &&
+                    registerRaw.containsKey(REG_NORMAL_SPEED) &&
+                    pendingTargetKmh == null
+            sport25Button.isEnabled = ready
+            sport32Button.isEnabled = ready
+            return
+        }
+
         val ready = authState == AuthState.AUTHENTICATED &&
             registerRaw.containsKey(REG_SPEED_RELEASE) &&
             pendingTargetKmh == null
@@ -989,6 +1179,32 @@ class MainActivity : Activity() {
     }
 
     private fun requestSportSpeed(targetKmh: Int) {
+        if (protocolMode == ProtocolMode.LEGACY_55AA) {
+            if (authState != AuthState.AUTHENTICATED ||
+                !registerRaw.containsKey(REG_NORMAL_SPEED)
+            ) {
+                toast("Scooter speed register is not ready yet")
+                return
+            }
+
+            val raw = targetKmh * 1000
+            pendingTargetKmh = targetKmh
+            updateSportButtons()
+            sportStatusView.text = "Applying " + targetKmh + " km/h…"
+            appendLog(
+                "SPORT legacy write 0x73 target=" + targetKmh +
+                    " km/h raw=" + raw
+            )
+            sendLegacyWrite(REG_NORMAL_SPEED, raw)
+
+            handler.postDelayed({
+                if (pendingTargetKmh == targetKmh) {
+                    sendLegacyRead(REG_NORMAL_SPEED, 4)
+                }
+            }, 450L)
+            return
+        }
+
         if (authState != AuthState.AUTHENTICATED) {
             toast("Scooter is not authenticated yet")
             return
