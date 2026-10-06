@@ -32,6 +32,8 @@ class MainActivity : Activity() {
         private const val RETRY_DEBOUNCE_MS = 2_000L
         private const val PAIR_RETRY_MS = 1_000L
         private const val REGISTER_TIMEOUT_MS = 2_500L
+        private const val INIT_TIMEOUT_MS = 1_800L
+        private const val INIT_MAX_ATTEMPTS = 4
 
         private val UUID_NUS_SERVICE = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
         private val UUID_NUS_RX = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9e")
@@ -82,6 +84,9 @@ class MainActivity : Activity() {
     private var authState = AuthState.IDLE
     private var scooterSerial: ByteArray? = null
     private var autoConnectAttempted = false
+    private var protocolName = "Ninebot"
+    private var initAttempt = 0
+    private var useWriteNoResponse = false
 
     private val encryptedRxBuffer = ByteArrayOutputStream()
     private val writeChunks = ArrayDeque<ByteArray>()
@@ -114,6 +119,26 @@ class MainActivity : Activity() {
                 handler.postDelayed(this, PAIR_RETRY_MS)
             }
         }
+    }
+
+    private val initTimeout = Runnable {
+        if (authState != AuthState.INIT_SENT) return@Runnable
+
+        initAttempt++
+        if (initAttempt >= INIT_MAX_ATTEMPTS) {
+            authFailure("No INIT response after " + INIT_MAX_ATTEMPTS + " attempts.")
+            sportStatusView.text = "No controller response — wake scooter / close other scooter apps"
+            return@Runnable
+        }
+
+        useWriteNoResponse = !useWriteNoResponse
+        setStatus("Wake scooter · retrying authentication…")
+        appendLog(
+            "AUTH INIT timeout. Retry " + (initAttempt + 1) + "/" + INIT_MAX_ATTEMPTS +
+                " using " + if (useWriteNoResponse) "WRITE_NO_RESPONSE" else "WRITE_REQUEST"
+        )
+        toast("Wake the scooter with one short power-button press")
+        handler.postDelayed({ attemptInitHandshake() }, 250L)
     }
 
     private val registerTimeout = Runnable {
@@ -413,6 +438,8 @@ class MainActivity : Activity() {
     private fun resetProtocolState() {
         handler.removeCallbacks(pairRetry)
         handler.removeCallbacks(registerTimeout)
+        handler.removeCallbacks(initTimeout)
+        handler.removeCallbacks(initTimeout)
         authState = AuthState.IDLE
         crypto = null
         scooterSerial = null
@@ -426,6 +453,8 @@ class MainActivity : Activity() {
         pendingTargetKmh = null
         ratedMaxKmh = null
         speedReleaseScale = 1
+        initAttempt = 0
+        useWriteNoResponse = false
         sport25Button.isEnabled = false
         sport32Button.isEnabled = false
         sport25Button.text = "25 km/h"
@@ -571,12 +600,31 @@ class MainActivity : Activity() {
     }
 
     private fun beginAuthentication(g: BluetoothGatt) {
-        val name = g.device.name ?: prefs.getString("last_nus_name", null) ?: "Ninebot"
-        crypto = ProtocolNinebot(name)
+        protocolName = g.device.name ?: prefs.getString("last_nus_name", null) ?: "Ninebot"
+        initAttempt = 0
+        useWriteNoResponse = false
+        attemptInitHandshake()
+    }
+
+    private fun attemptInitHandshake() {
+        handler.removeCallbacks(initTimeout)
+        encryptedRxBuffer.reset()
+        writeChunks.clear()
+        writeInProgress = false
+
+        crypto = ProtocolNinebot(protocolName)
         authState = AuthState.INIT_SENT
-        setStatus("Authenticating Ninebot session…")
-        appendLog("AUTH INIT → dashboard")
+
+        setStatus(
+            "Authenticating · INIT " + (initAttempt + 1) + "/" + INIT_MAX_ATTEMPTS +
+                " · " + if (useWriteNoResponse) "write NR" else "write request"
+        )
+        appendLog(
+            "AUTH INIT → dashboard · attempt " + (initAttempt + 1) + "/" + INIT_MAX_ATTEMPTS +
+                " · mode=" + if (useWriteNoResponse) "WRITE_NO_RESPONSE" else "WRITE_REQUEST"
+        )
         sendProtocolPacket(BLE, CMD_INIT, 0, byteArrayOf())
+        handler.postDelayed(initTimeout, INIT_TIMEOUT_MS)
     }
 
     private fun persistentAppKey(): ByteArray {
@@ -621,6 +669,9 @@ class MainActivity : Activity() {
         )
 
         val encrypted = c.encrypt(raw)
+        if (command == CMD_INIT) {
+            appendLog("TX INIT encrypted · " + packetSummary(encrypted))
+        }
         enqueueGattFrame(encrypted)
     }
 
@@ -638,14 +689,16 @@ class MainActivity : Activity() {
         if (writeInProgress) return
         val chunk = writeChunks.pollFirst() ?: return
         val rx = nusRx ?: return
+        val writeType =
+            if (useWriteNoResponse) BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            else BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
 
         writeInProgress = true
         val started = if (Build.VERSION.SDK_INT >= 33) {
-            g.writeCharacteristic(rx, chunk, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
-                BluetoothStatusCodes.SUCCESS
+            g.writeCharacteristic(rx, chunk, writeType) == BluetoothStatusCodes.SUCCESS
         } else {
             @Suppress("DEPRECATION")
-            rx.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            rx.writeType = writeType
             @Suppress("DEPRECATION")
             rx.value = chunk
             @Suppress("DEPRECATION")
@@ -655,12 +708,21 @@ class MainActivity : Activity() {
         if (!started) {
             writeInProgress = false
             writeChunks.clear()
-            appendLog("Could not start NUS write.")
+            appendLog("Could not start NUS write type=" + writeType)
             setStatus("Protocol write failed")
+            return
+        }
+
+        if (useWriteNoResponse) {
+            writeInProgress = false
+            if (writeChunks.isNotEmpty()) {
+                handler.postDelayed({ drainWriteQueue(g) }, 20L)
+            }
         }
     }
 
     private fun handleNotification(value: ByteArray) {
+        if (authState == AuthState.INIT_SENT) handler.removeCallbacks(initTimeout)
         appendLog("RX NUS RAW · " + packetSummary(value))
 
         if (encryptedRxBuffer.size() == 0 &&
@@ -729,6 +791,7 @@ class MainActivity : Activity() {
 
         when {
             source == BLE && target == CLIENT && command == CMD_INIT -> {
+                handler.removeCallbacks(initTimeout)
                 if (payload.size < 30) {
                     authFailure("INIT payload too short: " + payload.size)
                     return
@@ -779,6 +842,7 @@ class MainActivity : Activity() {
 
     private fun authFailure(reason: String) {
         handler.removeCallbacks(pairRetry)
+        handler.removeCallbacks(initTimeout)
         authState = AuthState.FAILED
         setStatus("Authentication failed")
         appendLog("AUTH failed: " + reason)
