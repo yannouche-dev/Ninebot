@@ -26,13 +26,15 @@ import kotlin.math.abs
 
 class MainActivity : Activity() {
     companion object {
-        private const val BUILD_ID = "r11-late-ping-pair"
+        private const val BUILD_ID = "r12-reference-handshake"
         private const val PERMISSION_REQUEST = 10
         private const val SCAN_DURATION_MS = 10_000L
         private const val RETRY_DEBOUNCE_MS = 2_000L
-        private const val REQUEST_TIMEOUT_MS = 15_000L
+        private const val REQUEST_TIMEOUT_MS = 20_000L
         private const val REGISTER_TIMEOUT_MS = 3_500L
         private const val REQUEST_MTU = 185
+        private const val PING_RETRY_MS = 1_200L
+        private const val CLASSIC_CHUNK_SIZE = 20
 
         private val UUID_NUS_SERVICE =
             UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
@@ -106,6 +108,8 @@ class MainActivity : Activity() {
     private var appKey = ByteArray(0)
 
     private var probeStep = 0
+    private var lastConfirmedCounter = 0
+    private var pingAttempts = 0
     private var pendingReadIndex: Int? = null
     private val speedReadQueue = ArrayDeque<Int>()
     private val speedRaw = linkedMapOf<Int, Int>()
@@ -127,14 +131,39 @@ class MainActivity : Activity() {
         }
     }
 
+    private val pingRetry = object : Runnable {
+        override fun run() {
+            if (state != SessionState.PING) return
+
+            pingAttempts += 1
+            appendLog(
+                "PING attempt " + pingAttempts +
+                    " · 20-byte classic transport"
+            )
+
+            sendClassic(
+                target = ES_BLE,
+                command = CMD_PING,
+                index = 0,
+                payload = appKey
+            )
+
+            handler.postDelayed(this, PING_RETRY_MS)
+        }
+    }
+
     private val requestTimeout = Runnable {
         when (state) {
             SessionState.INIT ->
                 failSession("Classic INIT timed out.")
 
             SessionState.PING -> {
-                appendLog("Classic PING timed out after " + REQUEST_TIMEOUT_MS + " ms; probing session anyway.")
-                beginSessionProbe()
+                handler.removeCallbacks(pingRetry)
+                appendLog(
+                    "Classic PING timed out after " + REQUEST_TIMEOUT_MS +
+                        " ms and " + pingAttempts + " attempt(s)."
+                )
+                failSession("Classic PING did not answer; session counter is unknown.")
             }
 
             SessionState.PROBING ->
@@ -182,7 +211,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(TextView(this).apply {
-            text = "Ninebot E3 Pro Controller · r11"
+            text = "Ninebot E3 Pro Controller · r12"
             textSize = 24f
         })
 
@@ -270,7 +299,7 @@ class MainActivity : Activity() {
 
         root.addView(TextView(this).apply {
             text =
-                "r11 accepts delayed PING pairing responses and captures 0x72–0x75 before enabling speed writes."
+                "r12 mirrors the working classic handshake: 20-byte transport, repeated PING, counter-safe session probes."
             setPadding(0, 0, 0, dp(8))
         })
 
@@ -588,17 +617,6 @@ class MainActivity : Activity() {
 
         selectedBleName = advertisedName
 
-        prefs.edit()
-            .putString(
-                "last_nus_address",
-                device.address
-            )
-            .putString(
-                "last_advertised_name",
-                advertisedName
-            )
-            .apply()
-
         gatt?.close()
 
         setStatus(
@@ -638,6 +656,8 @@ class MainActivity : Activity() {
         appKey = loadOrCreateAppKey()
 
         probeStep = 0
+        lastConfirmedCounter = 0
+        pingAttempts = 0
         pendingReadIndex = null
         speedReadQueue.clear()
         speedRaw.clear()
@@ -1016,6 +1036,10 @@ class MainActivity : Activity() {
         enqueueGattFrame(encrypted)
 
         handler.removeCallbacks(
+            pingRetry
+        )
+
+        handler.removeCallbacks(
             requestTimeout
         )
 
@@ -1084,26 +1108,21 @@ class MainActivity : Activity() {
     private fun enqueueGattFrame(
         frame: ByteArray
     ) {
-        val maxChunk = maxOf(20, negotiatedMtu - 3)
+        var offset = 0
+        var chunks = 0
 
-        if (frame.size <= maxChunk) {
-            writeChunks.add(frame)
-            appendLog(
-                "NUS frame queued whole · " + frame.size +
-                    " B · MTU " + negotiatedMtu
-            )
-        } else {
-            var offset = 0
-            while (offset < frame.size) {
-                val end = minOf(offset + maxChunk, frame.size)
-                writeChunks.add(frame.copyOfRange(offset, end))
-                offset = end
-            }
-            appendLog(
-                "NUS frame fragmented into " + writeChunks.size +
-                    " chunk(s) · MTU " + negotiatedMtu
-            )
+        while (offset < frame.size) {
+            val end = minOf(offset + CLASSIC_CHUNK_SIZE, frame.size)
+            writeChunks.add(frame.copyOfRange(offset, end))
+            chunks += 1
+            offset = end
         }
+
+        appendLog(
+            "NUS classic frame " + frame.size +
+                " B -> " + chunks + " chunk(s) of max " +
+                CLASSIC_CHUNK_SIZE + " B"
+        )
 
         gatt?.let {
             drainWriteQueue(it)
@@ -1150,10 +1169,9 @@ class MainActivity : Activity() {
             }
 
         appendLog(
-            "NUS write " +
+            "NUS chunk write " +
                 chunk.size +
-                " B · MTU " + negotiatedMtu +
-                " · started=" +
+                " B · started=" +
                 started
         )
 
@@ -1253,36 +1271,8 @@ class MainActivity : Activity() {
 
                 appendLog(
                     "PING-era frame counter=" + counter +
-                        " did not decode with name+BLE key; testing app+BLE key."
+                        " did not decode semantically; waiting for a valid PING/PAIR reply."
                 )
-
-                val alternative = ClassicNbCrypto().apply {
-                    setName(selectedBleName.toByteArray(Charsets.US_ASCII))
-                    setBleData(bleKey)
-                    setAppData(appKey)
-                }
-
-                val altPlain = runCatching {
-                    alternative.decrypt(frame)
-                }.getOrNull()
-
-                if (altPlain != null && isRecognizedClassicReply(altPlain)) {
-                    appendLog("✓ PING reply decoded with app+BLE derivation.")
-                    crypto.setAppData(appKey)
-                    crypto.setIteration(alternative.iteration)
-                    appendClassicPlainLog(altPlain)
-                    handleClassicPacket(altPlain)
-                    continue
-                }
-
-                appendLog(
-                    "PING reply still not semantically decoded; preserving counter " +
-                        counter + " and probing controller reads directly."
-                )
-                handler.removeCallbacks(requestTimeout)
-                crypto.setBleData(bleKey)
-                crypto.setIteration(counter)
-                beginSessionProbe()
                 continue
             }
 
@@ -1423,7 +1413,12 @@ class MainActivity : Activity() {
                     state != SessionState.READY &&
                     state != SessionState.FAILED
                 ) {
-                    appendLog("✓ Final PAIR acknowledged; probing controller now.")
+                    lastConfirmedCounter = crypto.iteration
+                    appendLog(
+                        "✓ PAIR acknowledged · counter=" + lastConfirmedCounter +
+                            "; probing controller now."
+                    )
+                    handler.removeCallbacks(pingRetry)
                     handler.removeCallbacks(requestTimeout)
                     handler.removeCallbacks(registerTimeout)
                     pendingReadIndex = null
@@ -1496,20 +1491,23 @@ class MainActivity : Activity() {
             bleKey
         )
 
-        state =
-            SessionState.PING
+        gatt?.device?.let { device ->
+            prefs.edit()
+                .putString("last_nus_address", device.address)
+                .putString("last_advertised_name", selectedBleName)
+                .apply()
+        }
+
+        state = SessionState.PING
+        pingAttempts = 0
 
         setStatus(
-            "Classic PING · session established"
+            "Classic PING · pairing/session check"
         )
 
-        sendClassic(
-            target = ES_BLE,
-            command = CMD_PING,
-            index = 0,
-            payload = appKey
-        )
-
+        handler.removeCallbacks(pingRetry)
+        handler.removeCallbacks(requestTimeout)
+        handler.post(pingRetry)
         handler.postDelayed(
             requestTimeout,
             REQUEST_TIMEOUT_MS
@@ -1525,27 +1523,39 @@ class MainActivity : Activity() {
             return
         }
 
+        handler.removeCallbacks(pingRetry)
         handler.removeCallbacks(requestTimeout)
         handler.removeCallbacks(registerTimeout)
         pendingReadIndex = null
 
+        lastConfirmedCounter = crypto.iteration
+
         appendLog(
-            "✓ CLASSIC PING response · paired index=" +
-                index +
+            "✓ CLASSIC PING response · index=" + index +
+                " · counter=" + lastConfirmedCounter +
                 if (state == SessionState.PROBING) " · accepted late during probe" else ""
         )
 
         if (index == 1) {
-            appendLog("PING confirms pairing/session acceptance.")
-        } else {
-            appendLog("PING index=" + index + " indicates pairing may still be pending.")
+            appendLog(
+                "PING confirms the app key/session. Probing controller directly; final PAIR is unnecessary."
+            )
+            handler.postDelayed(
+                { beginSessionProbe() },
+                250L
+            )
+            return
         }
 
-        if (scooterSerial.isNotEmpty()) {
-            appendLog(
-                "Sending final PAIR(serial) best-effort before controller probe."
-            )
+        appendLog(
+            "PING index=0: scooter is not paired with this app key yet."
+        )
+        sportStatusView.text =
+            "Pairing required. Press the scooter power button once."
 
+        toast("Press the scooter power button once to pair")
+
+        if (scooterSerial.isNotEmpty()) {
             sendClassic(
                 target = ES_BLE,
                 command = CMD_PAIR,
@@ -1554,12 +1564,9 @@ class MainActivity : Activity() {
             )
         }
 
-        handler.postDelayed(
-            {
-                beginSessionProbe()
-            },
-            3_500L
-        )
+        state = SessionState.PING
+        handler.postDelayed(pingRetry, PING_RETRY_MS)
+        handler.postDelayed(requestTimeout, REQUEST_TIMEOUT_MS)
     }
 
     private fun beginSessionProbe() {
@@ -1567,6 +1574,11 @@ class MainActivity : Activity() {
             SessionState.PROBING
 
         probeStep = 0
+
+        if (lastConfirmedCounter <= 0) {
+            failSession("Cannot probe session without a confirmed encrypted counter.")
+            return
+        }
 
         setStatus(
             "Testing classic encrypted session…"
@@ -1580,6 +1592,21 @@ class MainActivity : Activity() {
 
     private fun probeCurrentSession() {
         rxBuffer.reset()
+
+        when (probeStep) {
+            0 -> {
+                crypto.setBleData(bleKey)
+                crypto.setIteration(lastConfirmedCounter)
+            }
+            1 -> {
+                crypto.setAppData(appKey)
+                crypto.setIteration(lastConfirmedCounter)
+            }
+            else -> {
+                crypto.setBleData(bleKey)
+                crypto.setIteration(lastConfirmedCounter)
+            }
+        }
 
         val label =
             when (probeStep) {
@@ -1637,10 +1664,6 @@ class MainActivity : Activity() {
                     "Session read silent; switching to app+BLE derivation."
                 )
 
-                val counter = crypto.iteration
-                crypto.setAppData(appKey)
-                crypto.setIteration(counter)
-
                 handler.postDelayed(
                     { probeCurrentSession() },
                     250L
@@ -1651,10 +1674,6 @@ class MainActivity : Activity() {
                 appendLog(
                     "App+BLE silent; switching back to name+BLE derivation."
                 )
-
-                val counter = crypto.iteration
-                crypto.setBleData(bleKey)
-                crypto.setIteration(counter)
 
                 handler.postDelayed(
                     { probeCurrentSession() },
