@@ -26,12 +26,12 @@ import kotlin.math.abs
 
 class MainActivity : Activity() {
     companion object {
-        private const val BUILD_ID = "r9-classic-session-probe"
+        private const val BUILD_ID = "r10-classic-robust"
         private const val PERMISSION_REQUEST = 10
         private const val SCAN_DURATION_MS = 10_000L
         private const val RETRY_DEBOUNCE_MS = 2_000L
-        private const val REQUEST_TIMEOUT_MS = 3_000L
-        private const val REGISTER_TIMEOUT_MS = 2_500L
+        private const val REQUEST_TIMEOUT_MS = 8_000L
+        private const val REGISTER_TIMEOUT_MS = 3_500L\n        private const val REQUEST_MTU = 185
 
         private val UUID_NUS_SERVICE =
             UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
@@ -93,6 +93,8 @@ class MainActivity : Activity() {
     private var nusRx: BluetoothGattCharacteristic? = null
     private var autoConnectAttempted = false
     private var selectedBleName = ""
+    private var negotiatedMtu = 23
+    private var servicesStarted = false
 
     private var state = SessionState.IDLE
     private var crypto = ClassicNbCrypto()
@@ -129,8 +131,10 @@ class MainActivity : Activity() {
             SessionState.INIT ->
                 failSession("Classic INIT timed out.")
 
-            SessionState.PING ->
-                failSession("Classic PING timed out.")
+            SessionState.PING -> {
+                appendLog("Classic PING timed out; probing encrypted session anyway.")
+                beginSessionProbe()
+            }
 
             SessionState.PROBING ->
                 tryNextSessionKey()
@@ -177,7 +181,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(TextView(this).apply {
-            text = "Ninebot E3 Pro Controller · r9"
+            text = "Ninebot E3 Pro Controller · r10"
             textSize = 24f
         })
 
@@ -265,7 +269,7 @@ class MainActivity : Activity() {
 
         root.addView(TextView(this).apply {
             text =
-                "r9 is read-only after authentication. It captures 0x72–0x75 before enabling speed writes."
+                "r10 uses robust classic authentication and captures 0x72–0x75 before enabling speed writes."
             setPadding(0, 0, 0, dp(8))
         })
 
@@ -624,6 +628,8 @@ class MainActivity : Activity() {
 
         state = SessionState.IDLE
         crypto = ClassicNbCrypto()
+        negotiatedMtu = 23
+        servicesStarted = false
         rxBuffer.reset()
 
         bleKey = ByteArray(0)
@@ -706,14 +712,28 @@ class MainActivity : Activity() {
                         BluetoothProfile.STATE_CONNECTED
                     ) {
                         setStatus(
-                            "Connected · discovering services"
+                            "Connected · negotiating MTU"
                         )
 
                         appendLog(
-                            "Connected. Discovering GATT services."
+                            "Connected. Requesting MTU " + REQUEST_MTU + "."
                         )
 
-                        g.discoverServices()
+                        val requested = g.requestMtu(REQUEST_MTU)
+                        if (!requested) {
+                            appendLog("MTU request could not start; discovering services.")
+                            startServiceDiscovery(g)
+                        } else {
+                            handler.postDelayed({
+                                if (!servicesStarted && gatt === g) {
+                                    appendLog(
+                                        "MTU callback timeout; discovering services with MTU " +
+                                            negotiatedMtu + "."
+                                    )
+                                    startServiceDiscovery(g)
+                                }
+                            }, 1_000L)
+                        }
                     } else if (
                         newState ==
                         BluetoothProfile.STATE_DISCONNECTED
@@ -743,6 +763,25 @@ class MainActivity : Activity() {
                                 "."
                         )
                     }
+                }
+            }
+
+            override fun onMtuChanged(
+                g: BluetoothGatt,
+                mtu: Int,
+                status: Int
+            ) {
+                handler.post {
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        negotiatedMtu = mtu
+                        appendLog("✓ MTU negotiated: " + mtu + ".")
+                    } else {
+                        appendLog(
+                            "MTU negotiation failed status=" + status +
+                                "; using MTU " + negotiatedMtu + "."
+                        )
+                    }
+                    startServiceDiscovery(g)
                 }
             }
 
@@ -923,6 +962,14 @@ class MainActivity : Activity() {
             }
         }
 
+    private fun startServiceDiscovery(g: BluetoothGatt) {
+        if (servicesStarted) return
+        servicesStarted = true
+        setStatus("Connected · discovering services")
+        appendLog("Discovering GATT services.")
+        g.discoverServices()
+    }
+
     private fun beginClassicInit() {
         crypto = ClassicNbCrypto()
 
@@ -1036,23 +1083,25 @@ class MainActivity : Activity() {
     private fun enqueueGattFrame(
         frame: ByteArray
     ) {
-        var offset = 0
+        val maxChunk = maxOf(20, negotiatedMtu - 3)
 
-        while (offset < frame.size) {
-            val end =
-                minOf(
-                    offset + 20,
-                    frame.size
-                )
-
-            writeChunks.add(
-                frame.copyOfRange(
-                    offset,
-                    end
-                )
+        if (frame.size <= maxChunk) {
+            writeChunks.add(frame)
+            appendLog(
+                "NUS frame queued whole · " + frame.size +
+                    " B · MTU " + negotiatedMtu
             )
-
-            offset = end
+        } else {
+            var offset = 0
+            while (offset < frame.size) {
+                val end = minOf(offset + maxChunk, frame.size)
+                writeChunks.add(frame.copyOfRange(offset, end))
+                offset = end
+            }
+            appendLog(
+                "NUS frame fragmented into " + writeChunks.size +
+                    " chunk(s) · MTU " + negotiatedMtu
+            )
         }
 
         gatt?.let {
@@ -1100,9 +1149,10 @@ class MainActivity : Activity() {
             }
 
         appendLog(
-            "NUS chunk write " +
+            "NUS write " +
                 chunk.size +
-                " B · started=" +
+                " B · MTU " + negotiatedMtu +
+                " · started=" +
                 started
         )
 
@@ -1195,9 +1245,67 @@ class MainActivity : Activity() {
                     return
                 }
 
+            if (state == SessionState.PING && !isRecognizedClassicReply(plain)) {
+                val counter =
+                    ((frame[frame.size - 2].toInt() and 0xff) shl 8) or
+                        (frame[frame.size - 1].toInt() and 0xff)
+
+                appendLog(
+                    "PING-era frame counter=" + counter +
+                        " did not decode with name+BLE key; testing app+BLE key."
+                )
+
+                val alternative = ClassicNbCrypto().apply {
+                    setName(selectedBleName.toByteArray(Charsets.US_ASCII))
+                    setBleData(bleKey)
+                    setAppData(appKey)
+                }
+
+                val altPlain = runCatching {
+                    alternative.decrypt(frame)
+                }.getOrNull()
+
+                if (altPlain != null && isRecognizedClassicReply(altPlain)) {
+                    appendLog("✓ PING reply decoded with app+BLE derivation.")
+                    crypto.setAppData(appKey)
+                    crypto.setIteration(alternative.iteration)
+                    appendClassicPlainLog(altPlain)
+                    handleClassicPacket(altPlain)
+                    continue
+                }
+
+                appendLog(
+                    "PING reply still not semantically decoded; preserving counter " +
+                        counter + " and probing controller reads directly."
+                )
+                handler.removeCallbacks(requestTimeout)
+                crypto.setBleData(bleKey)
+                crypto.setIteration(counter)
+                beginSessionProbe()
+                continue
+            }
+
             appendClassicPlainLog(plain)
             handleClassicPacket(plain)
         }
+    }
+
+    private fun isRecognizedClassicReply(plain: ByteArray): Boolean {
+        if (plain.size < 7 ||
+            plain[0] != 0x5A.toByte() ||
+            plain[1] != 0xA5.toByte()
+        ) return false
+
+        val source = plain[3].toInt() and 0xff
+        val target = plain[4].toInt() and 0xff
+        val command = plain[5].toInt() and 0xff
+
+        return target == PC &&
+            (source == ES_BLE || source == ES_CONTROL) &&
+            (command == CMD_INIT ||
+                command == CMD_PING ||
+                command == CMD_PAIR ||
+                command == CMD_READ_ACK)
     }
 
     private fun appendClassicPlainLog(
@@ -1432,7 +1540,7 @@ class MainActivity : Activity() {
             {
                 beginSessionProbe()
             },
-            450L
+            700L
         )
     }
 
