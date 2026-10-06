@@ -26,7 +26,7 @@ import kotlin.math.abs
 
 class MainActivity : Activity() {
     companion object {
-        private const val BUILD_ID = "r12-reference-handshake"
+        private const val BUILD_ID = "r13-appkey-transition"
         private const val PERMISSION_REQUEST = 10
         private const val SCAN_DURATION_MS = 10_000L
         private const val RETRY_DEBOUNCE_MS = 2_000L
@@ -110,6 +110,7 @@ class MainActivity : Activity() {
     private var probeStep = 0
     private var lastConfirmedCounter = 0
     private var pingAttempts = 0
+    private var awaitingFinalPair = false
     private var pendingReadIndex: Int? = null
     private val speedReadQueue = ArrayDeque<Int>()
     private val speedRaw = linkedMapOf<Int, Int>()
@@ -211,7 +212,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(TextView(this).apply {
-            text = "Ninebot E3 Pro Controller · r12"
+            text = "Ninebot E3 Pro Controller · r13"
             textSize = 24f
         })
 
@@ -299,7 +300,7 @@ class MainActivity : Activity() {
 
         root.addView(TextView(this).apply {
             text =
-                "r12 mirrors the working classic handshake: 20-byte transport, repeated PING, counter-safe session probes."
+                "r13 mirrors the full pairing transition: PING 0→1 switches to app+BLE key, final PAIR, then verified reads."
             setPadding(0, 0, 0, dp(8))
         })
 
@@ -658,6 +659,7 @@ class MainActivity : Activity() {
         probeStep = 0
         lastConfirmedCounter = 0
         pingAttempts = 0
+        awaitingFinalPair = false
         pendingReadIndex = null
         speedReadQueue.clear()
         speedRaw.clear()
@@ -1413,16 +1415,19 @@ class MainActivity : Activity() {
                     state != SessionState.READY &&
                     state != SessionState.FAILED
                 ) {
+                    awaitingFinalPair = false
                     lastConfirmedCounter = crypto.iteration
                     appendLog(
-                        "✓ PAIR acknowledged · counter=" + lastConfirmedCounter +
-                            "; probing controller now."
+                        "✓ Final PAIR acknowledged under app+BLE · counter=" +
+                            lastConfirmedCounter
                     )
                     handler.removeCallbacks(pingRetry)
                     handler.removeCallbacks(requestTimeout)
                     handler.removeCallbacks(registerTimeout)
                     pendingReadIndex = null
-                    handler.postDelayed({ beginSessionProbe() }, 250L)
+                    handler.postDelayed({
+                        beginSessionProbe(preferAppKey = true)
+                    }, 250L)
                 }
             }
 
@@ -1538,12 +1543,48 @@ class MainActivity : Activity() {
 
         if (index == 1) {
             appendLog(
-                "PING confirms the app key/session. Probing controller directly; final PAIR is unnecessary."
+                "PING confirms pairing. Switching session key to app+BLE as required by classic pairing flow."
             )
-            handler.postDelayed(
-                { beginSessionProbe() },
-                250L
+
+            val confirmedCounter = lastConfirmedCounter
+            crypto.setAppData(appKey)
+            crypto.setIteration(confirmedCounter)
+
+            appendLog(
+                "Session key switched to app+BLE · preserved counter=" +
+                    crypto.iteration
             )
+
+            if (scooterSerial.isNotEmpty()) {
+                awaitingFinalPair = true
+                appendLog(
+                    "Sending final PAIR(serial) under app+BLE session key."
+                )
+
+                sendClassic(
+                    target = ES_BLE,
+                    command = CMD_PAIR,
+                    index = 0,
+                    payload = scooterSerial
+                )
+
+                handler.postDelayed({
+                    if (awaitingFinalPair &&
+                        state != SessionState.READY &&
+                        state != SessionState.FAILED
+                    ) {
+                        awaitingFinalPair = false
+                        lastConfirmedCounter = crypto.iteration
+                        appendLog(
+                            "Final PAIR not acknowledged; continuing best-effort · counter=" +
+                                lastConfirmedCounter
+                        )
+                        beginSessionProbe(preferAppKey = true)
+                    }
+                }, 3_200L)
+            } else {
+                beginSessionProbe(preferAppKey = true)
+            }
             return
         }
 
@@ -1569,11 +1610,13 @@ class MainActivity : Activity() {
         handler.postDelayed(requestTimeout, REQUEST_TIMEOUT_MS)
     }
 
-    private fun beginSessionProbe() {
+    private fun beginSessionProbe(
+        preferAppKey: Boolean = false
+    ) {
         state =
             SessionState.PROBING
 
-        probeStep = 0
+        probeStep = if (preferAppKey) 1 else 0
 
         if (lastConfirmedCounter <= 0) {
             failSession("Cannot probe session without a confirmed encrypted counter.")
@@ -1610,14 +1653,9 @@ class MainActivity : Activity() {
 
         val label =
             when (probeStep) {
-                0 ->
-                    "name + BLE key"
-
-                1 ->
-                    "app key + BLE key"
-
-                else ->
-                    "name + BLE key retry"
+                0 -> "name + BLE key"
+                1 -> "app key + BLE key"
+                else -> "name + BLE key fallback"
             }
 
         appendLog(
@@ -1645,7 +1683,7 @@ class MainActivity : Activity() {
 
         handler.postDelayed(
             requestTimeout,
-            REQUEST_TIMEOUT_MS
+            if (state == SessionState.PROBING) 4_500L else REQUEST_TIMEOUT_MS
         )
     }
 
@@ -1656,25 +1694,23 @@ class MainActivity : Activity() {
 
         pendingReadIndex = null
 
-        probeStep += 1
-
         when (probeStep) {
-            1 -> {
+            0 -> {
+                probeStep = 1
                 appendLog(
-                    "Session read silent; switching to app+BLE derivation."
+                    "name+BLE read silent; switching to app+BLE from confirmed counter."
                 )
-
                 handler.postDelayed(
                     { probeCurrentSession() },
                     250L
                 )
             }
 
-            2 -> {
+            1 -> {
+                probeStep = 2
                 appendLog(
-                    "App+BLE silent; switching back to name+BLE derivation."
+                    "app+BLE read silent; trying name+BLE fallback from the same confirmed counter."
                 )
-
                 handler.postDelayed(
                     { probeCurrentSession() },
                     250L
@@ -1683,7 +1719,7 @@ class MainActivity : Activity() {
 
             else -> {
                 failSession(
-                    "INIT/PING worked, but all encrypted controller-read derivations were silent."
+                    "Pairing succeeded, but controller reads are still silent under both session-key derivations."
                 )
             }
         }
@@ -1714,6 +1750,7 @@ class MainActivity : Activity() {
             )
 
             pendingReadIndex = null
+            lastConfirmedCounter = crypto.iteration
             state = SessionState.READY
 
             val raw =
@@ -1970,6 +2007,7 @@ class MainActivity : Activity() {
             registerTimeout
         )
 
+        awaitingFinalPair = false
         state =
             SessionState.FAILED
 
