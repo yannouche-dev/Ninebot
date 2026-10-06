@@ -1311,7 +1311,7 @@ class MainActivity : Activity() {
             }
         }
 
-        return value.size + " B · HEX [" +
+        return value.size.toString() + " B · HEX [" +
             value.toHex(" ") + "] · ASCII [" +
             ascii + "]"
     }
