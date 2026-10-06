@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.ninebote3"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0-r6-init-retry"
+        versionCode = 7
+        versionName = "0.7.0-r7-auto-protocol"
     }
 
     compileOptions {
