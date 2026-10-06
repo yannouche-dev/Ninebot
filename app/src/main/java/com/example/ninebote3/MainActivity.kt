@@ -26,11 +26,11 @@ import kotlin.math.abs
 
 class MainActivity : Activity() {
     companion object {
-        private const val BUILD_ID = "r10-classic-robust"
+        private const val BUILD_ID = "r11-late-ping-pair"
         private const val PERMISSION_REQUEST = 10
         private const val SCAN_DURATION_MS = 10_000L
         private const val RETRY_DEBOUNCE_MS = 2_000L
-        private const val REQUEST_TIMEOUT_MS = 8_000L
+        private const val REQUEST_TIMEOUT_MS = 15_000L
         private const val REGISTER_TIMEOUT_MS = 3_500L
         private const val REQUEST_MTU = 185
 
@@ -133,7 +133,7 @@ class MainActivity : Activity() {
                 failSession("Classic INIT timed out.")
 
             SessionState.PING -> {
-                appendLog("Classic PING timed out; probing encrypted session anyway.")
+                appendLog("Classic PING timed out after " + REQUEST_TIMEOUT_MS + " ms; probing session anyway.")
                 beginSessionProbe()
             }
 
@@ -182,7 +182,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(TextView(this).apply {
-            text = "Ninebot E3 Pro Controller · r10"
+            text = "Ninebot E3 Pro Controller · r11"
             textSize = 24f
         })
 
@@ -270,7 +270,7 @@ class MainActivity : Activity() {
 
         root.addView(TextView(this).apply {
             text =
-                "r10 uses robust classic authentication and captures 0x72–0x75 before enabling speed writes."
+                "r11 accepts delayed PING pairing responses and captures 0x72–0x75 before enabling speed writes."
             setPadding(0, 0, 0, dp(8))
         })
 
@@ -1419,6 +1419,16 @@ class MainActivity : Activity() {
                     "PAIR response idx=" +
                         index
                 )
+                if (index == 1 &&
+                    state != SessionState.READY &&
+                    state != SessionState.FAILED
+                ) {
+                    appendLog("✓ Final PAIR acknowledged; probing controller now.")
+                    handler.removeCallbacks(requestTimeout)
+                    handler.removeCallbacks(registerTimeout)
+                    pendingReadIndex = null
+                    handler.postDelayed({ beginSessionProbe() }, 250L)
+                }
             }
 
             source == ES_CONTROL &&
@@ -1509,24 +1519,31 @@ class MainActivity : Activity() {
     private fun handlePingResponse(
         index: Int
     ) {
-        if (state !=
-            SessionState.PING
+        if (state != SessionState.PING &&
+            state != SessionState.PROBING
         ) {
             return
         }
 
-        handler.removeCallbacks(
-            requestTimeout
-        )
+        handler.removeCallbacks(requestTimeout)
+        handler.removeCallbacks(registerTimeout)
+        pendingReadIndex = null
 
         appendLog(
             "✓ CLASSIC PING response · paired index=" +
-                index
+                index +
+                if (state == SessionState.PROBING) " · accepted late during probe" else ""
         )
+
+        if (index == 1) {
+            appendLog("PING confirms pairing/session acceptance.")
+        } else {
+            appendLog("PING index=" + index + " indicates pairing may still be pending.")
+        }
 
         if (scooterSerial.isNotEmpty()) {
             appendLog(
-                "Sending one PAIR(serial) attempt, then probing encrypted reads."
+                "Sending final PAIR(serial) best-effort before controller probe."
             )
 
             sendClassic(
@@ -1541,7 +1558,7 @@ class MainActivity : Activity() {
             {
                 beginSessionProbe()
             },
-            700L
+            3_500L
         )
     }
 
@@ -1581,6 +1598,7 @@ class MainActivity : Activity() {
                 (probeStep + 1) +
                 "/3 · derivation=" +
                 label +
+                " · counter=" + crypto.iteration +
                 " · READ 0x1A"
         )
 
@@ -1619,13 +1637,13 @@ class MainActivity : Activity() {
                     "Session read silent; switching to app+BLE derivation."
                 )
 
-                crypto.setAppData(
-                    appKey
-                )
+                val counter = crypto.iteration
+                crypto.setAppData(appKey)
+                crypto.setIteration(counter)
 
                 handler.postDelayed(
                     { probeCurrentSession() },
-                    150L
+                    250L
                 )
             }
 
@@ -1634,13 +1652,13 @@ class MainActivity : Activity() {
                     "App+BLE silent; switching back to name+BLE derivation."
                 )
 
-                crypto.setBleData(
-                    bleKey
-                )
+                val counter = crypto.iteration
+                crypto.setBleData(bleKey)
+                crypto.setIteration(counter)
 
                 handler.postDelayed(
                     { probeCurrentSession() },
-                    150L
+                    250L
                 )
             }
 
