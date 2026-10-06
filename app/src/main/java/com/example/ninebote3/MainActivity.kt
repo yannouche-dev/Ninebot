@@ -34,6 +34,7 @@ class MainActivity : Activity() {
         private const val REGISTER_TIMEOUT_MS = 2_500L
         private const val INIT_TIMEOUT_MS = 1_800L
         private const val INIT_MAX_ATTEMPTS = 4
+        private const val BUILD_ID = "r6-init-retry"
 
         private val UUID_NUS_SERVICE = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
         private val UUID_NUS_RX = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9e")
@@ -151,6 +152,7 @@ class MainActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         buildUi()
+        appendLog("BUILD " + BUILD_ID)
         appendLog("App opened.")
         setStatus("Starting…")
         ensurePermissionsAndAutoScan()
@@ -175,7 +177,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(TextView(this).apply {
-            text = "Ninebot E3 Pro Controller"
+            text = "Ninebot E3 Pro Controller · r6"
             textSize = 24f
         })
 
@@ -438,7 +440,6 @@ class MainActivity : Activity() {
     private fun resetProtocolState() {
         handler.removeCallbacks(pairRetry)
         handler.removeCallbacks(registerTimeout)
-        handler.removeCallbacks(initTimeout)
         handler.removeCallbacks(initTimeout)
         authState = AuthState.IDLE
         crypto = null
