@@ -38,7 +38,7 @@ class MainActivity : Activity() {
         private val UUID_NUS_TX = UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca9e")
         private val UUID_CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
-        private const val PHONE = 0x3E
+        private const val CLIENT = 0x3D
         private const val BLE = 0x21
         private const val CONTROL = 0x20
 
@@ -607,7 +607,7 @@ class MainActivity : Activity() {
         raw[0] = 0x5A
         raw[1] = 0xA5.toByte()
         raw[2] = payload.size.toByte()
-        raw[3] = PHONE.toByte()
+        raw[3] = CLIENT.toByte()
         raw[4] = target.toByte()
         raw[5] = command.toByte()
         raw[6] = index.toByte()
@@ -728,7 +728,7 @@ class MainActivity : Activity() {
         )
 
         when {
-            source == BLE && target == PHONE && command == CMD_INIT -> {
+            source == BLE && target == CLIENT && command == CMD_INIT -> {
                 if (payload.size < 30) {
                     authFailure("INIT payload too short: " + payload.size)
                     return
@@ -743,7 +743,7 @@ class MainActivity : Activity() {
                 handler.postDelayed(pairRetry, PAIR_RETRY_MS)
             }
 
-            source == BLE && target == PHONE && command == CMD_PING -> {
+            source == BLE && target == CLIENT && command == CMD_PING -> {
                 if (index == 1) {
                     handler.removeCallbacks(pairRetry)
                     appendLog("✓ Pair key accepted.")
@@ -760,7 +760,7 @@ class MainActivity : Activity() {
                 }
             }
 
-            source == BLE && target == PHONE && command == CMD_PAIR -> {
+            source == BLE && target == CLIENT && command == CMD_PAIR -> {
                 if (index == 1) {
                     authState = AuthState.AUTHENTICATED
                     appendLog("✓ Ninebot application pairing authenticated.")
@@ -771,7 +771,7 @@ class MainActivity : Activity() {
                 }
             }
 
-            source == CONTROL && target == PHONE && command == CMD_READ_ACK -> {
+            source == CONTROL && target == CLIENT && command == CMD_READ_ACK -> {
                 handleRegisterRead(index, payload)
             }
         }
