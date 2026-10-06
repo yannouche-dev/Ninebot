@@ -43,6 +43,9 @@ class MainActivity : Activity() {
     private lateinit var deviceList: LinearLayout
     private lateinit var deviceScroll: ScrollView
     private lateinit var scanButton: Button
+    private lateinit var sport25Button: Button
+    private lateinit var sport32Button: Button
+    private lateinit var sportStatusView: TextView
 
     private var scanner: BluetoothLeScanner? = null
     private var scanning = false
@@ -50,6 +53,8 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val found = linkedMapOf<String, BluetoothDevice>()
     private val trace = StringBuilder()
+    private val prefs by lazy { getSharedPreferences("ninebot", MODE_PRIVATE) }
+    private var autoConnectAttempted = false
     private val readQueue = ArrayDeque<BluetoothGattCharacteristic>()
 
     private val retryScan = Runnable {
@@ -134,31 +139,40 @@ class MainActivity : Activity() {
             )
         )
 
-        val row = LinearLayout(this).apply {
+        root.addView(TextView(this).apply {
+            text = "SPORT PROFILE"
+            textSize = 13f
+            setPadding(0, dp(10), 0, dp(4))
+        })
+
+        val sportRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, 0)
         }
-        row.addView(EditText(this).apply {
-            hint = "25"
-            setText("25")
-            inputType = 2
-            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f)
-        })
-        row.addView(TextView(this).apply {
-            text = " km/h"
-            textSize = 18f
-        })
-        row.addView(Button(this).apply {
-            text = "SET SPORT"
+        sport25Button = Button(this).apply {
+            text = "25 km/h"
             isEnabled = false
-            setOnClickListener { toast("Disabled until the application protocol is verified.") }
-        })
-        root.addView(row)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { requestSportProfile(25) }
+        }
+        sport32Button = Button(this).apply {
+            text = "32 km/h"
+            isEnabled = false
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { requestSportProfile(32) }
+        }
+        sportRow.addView(sport25Button)
+        sportRow.addView(sport32Button)
+        root.addView(sportRow)
+
+        sportStatusView = TextView(this).apply {
+            text = "Waiting for verified speed protocol"
+            setPadding(0, dp(4), 0, dp(8))
+        }
+        root.addView(sportStatusView)
 
         root.addView(TextView(this).apply {
-            text = "Passive diagnostics only: notifications and safe identification reads. No scooter command payloads are sent."
-            setPadding(0, dp(6), 0, dp(8))
+            text = "Passive diagnostics only for now. A profile is marked ✓ only after device acknowledgement/readback."
+            setPadding(0, 0, 0, dp(8))
         })
 
         val logActions = LinearLayout(this).apply {
@@ -273,6 +287,7 @@ class MainActivity : Activity() {
         if (scanning) return
 
         found.clear()
+        autoConnectAttempted = false
         deviceList.removeAllViews()
         scanner = adapter.bluetoothLeScanner
         if (scanner == null) {
@@ -318,6 +333,14 @@ class MainActivity : Activity() {
                         text = name + "\n" + device.address + " (" + result.rssi + " dBm)"
                         setOnClickListener { connect(device) }
                     })
+
+                    val savedAddress = prefs.getString("last_nus_address", null)
+                    if (!autoConnectAttempted && savedAddress != null &&
+                        savedAddress.equals(device.address, ignoreCase = true)) {
+                        autoConnectAttempted = true
+                        appendLog("Known scooter found; auto-connecting.")
+                        connect(device)
+                    }
                 }
             }
         }
@@ -393,7 +416,12 @@ class MainActivity : Activity() {
                     ", RX writable=" + (rx != null) +
                     ". No application payload writes will be sent."
             )
-            setStatus("Connected · NUS detected · passive capture")
+            prefs.edit()
+                .putString("last_nus_address", g.device.address)
+                .putString("last_nus_name", g.device.name)
+                .apply()
+            setStatus("✓ Connected · NUS detected · passive capture")
+            appendLogUi("Scooter remembered for automatic reconnection.")
 
             queueIdentificationReads(g)
 
@@ -536,6 +564,19 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun requestSportProfile(targetKmh: Int) {
+        sportStatusView.text = "Sport " + targetKmh + " km/h · verification required"
+        appendLog("SPORT request " + targetKmh + " km/h blocked: no verified application-layer command/readback yet.")
+        toast("Speed protocol is not verified yet.")
+    }
+
+    private fun markSportProfileConfirmed(targetKmh: Int) {
+        sportStatusView.text = "✓ Sport " + targetKmh + " km/h confirmed by scooter"
+        sport25Button.text = if (targetKmh == 25) "✓ 25 km/h" else "25 km/h"
+        sport32Button.text = if (targetKmh == 32) "✓ 32 km/h" else "32 km/h"
+        appendLog("SPORT effective: " + targetKmh + " km/h confirmed by device.")
+    }
+
     private fun parsePnpId(value: ByteArray): String? {
         if (value.size < 7) return null
         fun u16(offset: Int): Int =
@@ -559,7 +600,7 @@ class MainActivity : Activity() {
                 append(if (c in 32..126) c.toChar() else '.')
             }
         }
-        return value.size + " B · HEX [" + hex + "] · ASCII [" + ascii + "]"
+        return value.size.toString() + " B · HEX [" + hex + "] · ASCII [" + ascii + "]"
     }
 
     private fun propertyNames(properties: Int): String {
