@@ -27,6 +27,7 @@ class MainActivity : Activity() {
     private lateinit var logBody: ScrollView
     private lateinit var logToggle: Button
     private lateinit var deviceList: LinearLayout
+    private lateinit var deviceScroll: ScrollView
     private lateinit var scanButton: Button
 
     private var scanner: BluetoothLeScanner? = null
@@ -56,10 +57,22 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
+        val page = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = true
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 24, 28, 20)
+            setPadding(dp(14), dp(12), dp(14), dp(16))
         }
+        page.addView(
+            root,
+            ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT
+            )
+        )
 
         root.addView(TextView(this).apply {
             text = "Ninebot E3 Pro Controller"
@@ -68,7 +81,7 @@ class MainActivity : Activity() {
         root.addView(TextView(this).apply {
             text = "BLE diagnostic / GATT explorer"
             textSize = 14f
-            setPadding(0, 8, 0, 18)
+            setPadding(0, dp(4), 0, dp(10))
         })
 
         scanButton = Button(this).apply {
@@ -80,21 +93,40 @@ class MainActivity : Activity() {
         }
         root.addView(scanButton)
 
+        root.addView(TextView(this).apply {
+            text = "SEARCH RESULTS"
+            textSize = 13f
+            setPadding(0, dp(10), 0, dp(4))
+        })
+
         deviceList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 12, 0, 12)
+            setPadding(0, 0, 0, dp(4))
         }
-        root.addView(deviceList)
+        deviceScroll = ScrollView(this).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            isNestedScrollingEnabled = true
+            addView(deviceList)
+        }
+        root.addView(
+            deviceScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(220)
+            )
+        )
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)
         }
         row.addView(EditText(this).apply {
             hint = "25"
             setText("25")
             inputType = 2
-            layoutParams = LinearLayout.LayoutParams(0, 60, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f)
         })
         row.addView(TextView(this).apply {
             text = " km/h"
@@ -109,7 +141,7 @@ class MainActivity : Activity() {
 
         root.addView(TextView(this).apply {
             text = "Sport control is disabled until the exact E3 Pro 3 BLE protocol is verified."
-            setPadding(0, 10, 0, 10)
+            setPadding(0, dp(6), 0, dp(8))
         })
 
         logToggle = Button(this).apply {
@@ -121,16 +153,28 @@ class MainActivity : Activity() {
         logView = TextView(this).apply {
             textSize = 12f
             setTextIsSelectable(true)
-            setPadding(8, 8, 8, 8)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         logBody = ScrollView(this).apply {
             visibility = View.GONE
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            isNestedScrollingEnabled = true
             addView(logView)
         }
-        root.addView(logBody, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(
+            logBody,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(260)
+            )
+        )
 
-        setContentView(root)
+        setContentView(page)
     }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     private fun toggleLog() {
         val open = logBody.visibility != View.VISIBLE
