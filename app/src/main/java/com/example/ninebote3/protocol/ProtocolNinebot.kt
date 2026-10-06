@@ -68,7 +68,7 @@ class ProtocolNinebot(private val _name: String) {
                     decrypted[1] == 0xA5.toByte() &&
                     decrypted[2] == 0x1E.toByte() &&
                     decrypted[3] == 0x21.toByte() &&
-                    decrypted[4] == 0x3E.toByte() &&
+                    (decrypted[4] == 0x3D.toByte() || decrypted[4] == 0x3E.toByte()) &&
                     decrypted[5] == 0x5B.toByte()) {
                 System.arraycopy(decrypted, 7, randomBleData, 0, 16)
                 calcSha1Key(_name.toByteArray(), randomBleData)
@@ -89,7 +89,7 @@ class ProtocolNinebot(private val _name: String) {
                     decrypted[1] == 0xA5.toByte() &&
                     decrypted[2] == 0x00.toByte() &&
                     decrypted[3] == 0x21.toByte() &&
-                    decrypted[4] == 0x3E.toByte() &&
+                    (decrypted[4] == 0x3D.toByte() || decrypted[4] == 0x3E.toByte()) &&
                     decrypted[5] == 0x5C.toByte() &&
                     decrypted[6] == 0x01.toByte()) {
                 calcSha1Key(randomAppData, randomBleData)
@@ -141,7 +141,7 @@ class ProtocolNinebot(private val _name: String) {
             if (Data[0] == 0x5A.toByte() &&
                     Data[1] == 0xA5.toByte() &&
                     Data[2] == 0x10.toByte() &&
-                    Data[3] == 0x3E.toByte() &&
+                    (Data[3] == 0x3D.toByte() || Data[3] == 0x3E.toByte()) &&
                     Data[4] == 0x21.toByte() &&
                     Data[5] == 0x5C.toByte() &&
                     Data[6] == 0x00.toByte()) {
