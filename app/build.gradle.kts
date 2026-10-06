@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.ninebote3"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.7.0-r7-auto-protocol"
+        versionCode = 8
+        versionName = "0.8.0-r8-x3-encryption2"
     }
 
     compileOptions {
