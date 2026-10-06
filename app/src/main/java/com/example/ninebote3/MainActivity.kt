@@ -31,7 +31,8 @@ class MainActivity : Activity() {
         private const val SCAN_DURATION_MS = 10_000L
         private const val RETRY_DEBOUNCE_MS = 2_000L
         private const val REQUEST_TIMEOUT_MS = 8_000L
-        private const val REGISTER_TIMEOUT_MS = 3_500L\n        private const val REQUEST_MTU = 185
+        private const val REGISTER_TIMEOUT_MS = 3_500L
+        private const val REQUEST_MTU = 185
 
         private val UUID_NUS_SERVICE =
             UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
