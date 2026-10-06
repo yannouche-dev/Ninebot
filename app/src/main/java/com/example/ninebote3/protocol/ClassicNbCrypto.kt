@@ -20,6 +20,10 @@ class ClassicNbCrypto {
     var iteration: Int = 0
         private set
 
+    fun setIteration(value: Int) {
+        iteration = value.coerceAtLeast(0)
+    }
+
     fun setName(value: ByteArray) {
         name = value.copyOf()
         sha1Key = calcSha1Key(name, FW_DATA)
