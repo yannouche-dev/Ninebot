@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.ninebote3"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.11.0-r11-late-ping-pair"
+        versionCode = 12
+        versionName = "0.12.0-r12-reference-handshake"
     }
 
     compileOptions {
