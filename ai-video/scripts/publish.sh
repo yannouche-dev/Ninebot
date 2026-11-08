@@ -10,8 +10,7 @@ BRANCH="${AI_VIDEO_BRANCH:-ai-videos}"
 ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$OUT/meta.json")"
 STORE="${RUNNER_TEMP:-/tmp}/ai-video-store"
 
-git config --global user.name "github-actions[bot]"
-git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+BOT=(-c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com")
 
 for attempt in 1 2 3 4 5 6; do
   rm -rf "$STORE"
@@ -33,7 +32,7 @@ for attempt in 1 2 3 4 5 6; do
   [ -f "$OUT/poster.jpg" ] && cp "$OUT/poster.jpg" "$STORE/videos/$ID.jpg"
 
   git -C "$STORE" add -A
-  git -C "$STORE" commit -qm "Vidéo IA : $ID"
+  git -C "$STORE" "${BOT[@]}" commit -qm "Vidéo IA : $ID" || echo "Rien de nouveau à committer."
   if git -C "$STORE" push origin "HEAD:refs/heads/$BRANCH"; then
     echo "Publié sur la branche $BRANCH : videos/$ID.mp4"
     [ -n "${GITHUB_OUTPUT:-}" ] && echo "published=true" >> "$GITHUB_OUTPUT"

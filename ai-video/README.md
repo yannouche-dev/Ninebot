@@ -32,17 +32,18 @@ rester bloqué.
 
 ## Mise en route (5 minutes)
 
-1. **Fusionner** cette branche dans `main` (les workflows `workflow_dispatch` et
-   `issues` ne s'exécutent que depuis la branche par défaut).
-2. **Activer Pages** : *Settings → Pages → Build and deployment → Source :
+1. **Activer Pages** : *Settings → Pages → Build and deployment → Source :
    **GitHub Actions***.
-3. **Token Hugging Face (recommandé)** : créez un compte gratuit sur
+2. **Token Hugging Face (recommandé)** : créez un compte gratuit sur
    huggingface.co, puis *Settings → Access Tokens → New token* (type **Read**).
    Dans le dépôt GitHub : *Settings → Secrets and variables → Actions → New
-   repository secret*, nom **`HF_TOKEN`**. Sans token, le quota anonyme est minime.
-4. **Premier déploiement** : onglet *Actions → « Vidéo IA – site GitHub Pages » →
-   Run workflow* (il se lance aussi tout seul après chaque vidéo).
-5. Ouvrez `https://<utilisateur>.github.io/<dépôt>/` — ici
+   repository secret*, nom **`HF_TOKEN`**. Sans token, le quota anonyme (partagé)
+   fonctionne souvent, mais un token vous donne votre propre quota quotidien.
+3. **Fusionner** cette branche dans `main` (les déclencheurs `workflow_dispatch` et
+   `issues` ne fonctionnent que depuis la branche par défaut). La fusion déploie
+   le site automatiquement ; sinon : *Actions → « Vidéo IA – site GitHub Pages » →
+   Run workflow*.
+4. Ouvrez `https://<utilisateur>.github.io/<dépôt>/`, ici
    **https://yannouche-dev.github.io/Ninebot/**.
 
 ## Utilisation

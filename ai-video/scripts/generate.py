@@ -155,7 +155,7 @@ def _fill_param(p: dict, req: dict, size: tuple[int, int]):
     if "negative" in key:
         return req.get("negative_prompt") or default or ""
     if "prompt" in key and not is_num:
-        return req.get("prompt_en") or req["prompt"]
+        return req["prompt"]
     if is_num:
         if "height" in key:
             return _clamp(p, size[1])
@@ -225,7 +225,7 @@ def run_hf(req: dict, work: Path) -> dict:
 
     token = os.environ.get("HF_TOKEN") or None
     if not token:
-        log("Pas de secret HF_TOKEN : quota anonyme (très faible). Ajoute un token gratuit !")
+        log("Pas de secret HF_TOKEN : quota anonyme partagé. Ajoutez un token gratuit pour un quota personnel.")
     spaces = os.environ.get("AI_VIDEO_HF_SPACES") or DEFAULT_HF_SPACES
     errors = []
     for entry in [s.strip() for s in spaces.split(",") if s.strip()]:
@@ -242,7 +242,12 @@ def run_hf(req: dict, work: Path) -> dict:
                 shown = a if not isinstance(a, str) or len(a) < 80 else a[:77] + "..."
                 log(f"  {p.get('parameter_name') or p.get('label')} = {shown!r}")
             started = time.time()
-            result = client.predict(*args, api_name=api_name)
+            job = client.submit(*args, api_name=api_name)
+            try:
+                result = job.result(timeout=float(os.environ.get("AI_VIDEO_HF_TIMEOUT", 600)))
+            except TimeoutError:
+                job.cancel()
+                raise
             video = _find_video(result)
             if not video:
                 raise RuntimeError(f"pas de vidéo dans la réponse: {str(result)[:300]}")

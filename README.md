@@ -9,3 +9,10 @@ The app scans BLE devices, connects to a selected device, and lists GATT service
 Local requirements: JDK 17, Android SDK 35, Gradle 8.9.
 
 Build refresh: direct APK handoff.
+
+## Studio vidéo IA (GitHub Pages + Actions)
+
+Ce dépôt contient aussi un générateur de vidéos IA gratuit : une page GitHub Pages
+déclenche un workflow GitHub Actions qui génère la vidéo (GPU gratuit Hugging Face
+ZeroGPU avec LTX-2.5/LTX-2.3, repli CPU AnimateDiff-Lightning) et la publie dans
+une galerie. Voir [ai-video/README.md](ai-video/README.md).

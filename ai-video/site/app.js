@@ -81,7 +81,6 @@
       duration: Number(durationEl.value),
       seed: seed === "" ? null : Number(seed),
       enhance: $("enhance").checked,
-      negative_prompt: $("negative").value.trim(),
     };
   }
 
