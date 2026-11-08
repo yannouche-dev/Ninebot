@@ -185,7 +185,14 @@ def _gh_request(url: str, token: str, payload: dict | None = None):
     if data:
         req.add_header("Content-Type", "application/json")
     with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.load(resp)
+        raw = resp.read()
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            raise RuntimeError(
+                f"réponse non JSON (HTTP {resp.status}, {resp.headers.get('Content-Type')}, "
+                f"{resp.geturl()}): {raw[:200]!r}"
+            ) from None
 
 
 def _choose_model(token: str) -> list[str]:

@@ -1,0 +1,59 @@
+name: "Vidéo IA – site GitHub Pages"
+
+# Assemble ai-video/site (branche main) + les vidéos de la branche ai-videos,
+# puis déploie sur GitHub Pages. Appelé automatiquement après chaque vidéo.
+# Prérequis (une seule fois) : Settings > Pages > Source = "GitHub Actions".
+on:
+  push:
+    branches: [main]
+    paths: ['ai-video/site/**', 'ai-video/scripts/build_index.py', '.github/workflows/ai-video-pages.yml']
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      page_url:
+        description: URL du site
+        value: ${{ jobs.deploy.outputs.page_url }}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ai-video-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ai-video
+
+      - name: Assembler le site
+        env:
+          BRANCH: ai-videos
+        run: |
+          mkdir -p _site/videos
+          cp -r ai-video/site/. _site/
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            git fetch --depth=1 origin "$BRANCH"
+            git archive FETCH_HEAD videos | tar -x -C _site
+          fi
+          python3 ai-video/scripts/build_index.py _site/videos
+          du -sh _site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

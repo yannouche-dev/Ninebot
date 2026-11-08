@@ -1,0 +1,186 @@
+name: "Vidéo IA – générer"
+run-name: "🎬 ${{ inputs.prompt || github.event.issue.title }}"
+
+# Déclenchement :
+#  - bouton "Run workflow" (onglet Actions) ou page GitHub Pages en mode direct ;
+#  - issue dont le titre commence par "[video]" ouverte par le propriétaire
+#    (ou un collaborateur) du dépôt : c'est ce qu'utilise la page sans token.
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Description de la vidéo (français ou anglais)"
+        required: true
+        type: string
+      engine:
+        description: "Moteur : auto = GPU Hugging Face puis CPU si quota épuisé"
+        type: choice
+        options: [auto, hf, cpu]
+        default: auto
+      format:
+        description: "Format"
+        type: choice
+        options: [landscape, portrait, square]
+        default: landscape
+      duration:
+        description: "Durée en secondes (2 à 8)"
+        type: string
+        default: "4"
+      seed:
+        description: "Graine (vide = aléatoire)"
+        type: string
+        default: ""
+      enhance:
+        description: "Traduire et enrichir le prompt avec GitHub Models (gratuit)"
+        type: boolean
+        default: true
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+  models: read
+
+jobs:
+  generate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (startsWith(github.event.issue.title, '[video]') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: "1"
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      # Optionnel (Settings > Secrets and variables > Actions > Variables) :
+      AI_VIDEO_HF_SPACES: ${{ vars.AI_VIDEO_HF_SPACES }}
+      AI_VIDEO_LLM: ${{ vars.AI_VIDEO_LLM }}
+      REQ: /tmp/ai-video/request.json
+      OUT: /tmp/ai-video/out
+    outputs:
+      id: ${{ steps.req.outputs.id }}
+      issue: ${{ steps.req.outputs.issue }}
+      engine: ${{ steps.result.outputs.engine }}
+      published: ${{ steps.publish.outputs.published }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ai-video/requirements-*.txt
+
+      - name: Lire la demande
+        id: req
+        run: python ai-video/scripts/request.py parse --out "$REQ"
+
+      - name: Prévenir sur l'issue
+        if: steps.req.outputs.issue != ''
+        env:
+          ISSUE: ${{ steps.req.outputs.issue }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: gh issue comment "$ISSUE" --body "⏳ Génération lancée ([suivre le workflow]($RUN_URL)). La vidéo apparaîtra dans la galerie GitHub Pages dans quelques minutes."
+
+      - name: Outils communs
+        run: pip install -r ai-video/requirements-hf.txt
+
+      - name: Améliorer le prompt (GitHub Models)
+        if: steps.req.outputs.enhance == 'true'
+        continue-on-error: true
+        run: python ai-video/scripts/request.py enhance --file "$REQ"
+
+      - name: Moteur GPU gratuit (Space Hugging Face)
+        id: hf
+        if: steps.req.outputs.engine != 'cpu'
+        continue-on-error: true
+        run: python ai-video/scripts/generate.py --engine hf --request "$REQ" --out "$OUT"
+
+      - name: Installer le moteur CPU
+        id: cpu_deps
+        if: steps.req.outputs.engine == 'cpu' || (steps.req.outputs.engine == 'auto' && steps.hf.outcome != 'success')
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r ai-video/requirements-cpu.txt
+
+      - name: Moteur CPU (AnimateDiff-Lightning, illimité)
+        id: cpu
+        if: steps.cpu_deps.outcome == 'success'
+        run: python ai-video/scripts/generate.py --engine cpu --request "$REQ" --out "$OUT"
+
+      - name: Résultat
+        id: result
+        run: |
+          if [ ! -f "$OUT/video.mp4" ]; then
+            echo "::error::Aucune vidéo produite (voir les étapes ci-dessus)."
+            exit 1
+          fi
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os
+          meta = json.load(open(os.path.join(os.environ["OUT"], "meta.json")))
+          print(f"engine={meta['engine']}")
+          EOF
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          m = json.load(open(os.path.join(os.environ["OUT"], "meta.json")))
+          print(f"### 🎬 {m['id']}\n")
+          print(f"- **Prompt** : {m['prompt']}")
+          if m.get("prompt_used") and m["prompt_used"] != m["prompt"]:
+              print(f"- **Prompt envoyé** : {m['prompt_used']}")
+          print(f"- **Moteur** : {m['engine']} — {m['model']}")
+          print(f"- **Taille** : {m['width']}×{m['height']}, {m['duration']} s, {m['size']/1e6:.1f} Mo, seed {m['seed']}")
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ steps.req.outputs.id }}
+          path: ${{ env.OUT }}/
+          retention-days: 30
+
+      - name: Publier dans la galerie (branche ai-videos)
+        id: publish
+        if: github.ref_name == github.event.repository.default_branch
+        run: bash ai-video/scripts/publish.sh "$OUT"
+
+  pages:
+    needs: generate
+    if: needs.generate.outputs.published == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/ai-video-pages.yml
+
+  report:
+    needs: [generate, pages]
+    if: always() && github.event_name == 'issues' && needs.generate.outputs.issue != ''
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ISSUE: ${{ needs.generate.outputs.issue }}
+      ID: ${{ needs.generate.outputs.id }}
+      ENGINE: ${{ needs.generate.outputs.engine }}
+      PAGE_URL: ${{ needs.pages.outputs.page_url }}
+      GEN_RESULT: ${{ needs.generate.result }}
+      PAGES_RESULT: ${{ needs.pages.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Répondre sur l'issue
+        run: |
+          if [ "$GEN_RESULT" = "success" ] && [ "$PAGES_RESULT" = "success" ]; then
+            BODY="✅ Vidéo prête (moteur \`$ENGINE\`) : ${PAGE_URL}videos/$ID.mp4
+
+          [![aperçu](${PAGE_URL}videos/$ID.jpg)](${PAGE_URL}videos/$ID.mp4)
+
+          Galerie : $PAGE_URL"
+            gh issue comment "$ISSUE" --body "$BODY"
+            gh issue close "$ISSUE" --reason completed
+          elif [ "$GEN_RESULT" = "success" ]; then
+            gh issue comment "$ISSUE" --body "⚠️ Vidéo générée mais le site GitHub Pages n'a pas pu être mis à jour (Pages est-il activé avec la source « GitHub Actions » ?). La vidéo est disponible en artefact du [workflow]($RUN_URL)."
+          else
+            gh issue comment "$ISSUE" --body "❌ La génération a échoué. Détails : $RUN_URL"
+          fi

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Studio vidéo IA</title>
+  <meta name="description" content="Générez gratuitement des vidéos IA avec GitHub Actions et Hugging Face.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>🎬 Studio vidéo IA</h1>
+      <p class="lead">Décrivez une scène : GitHub Actions génère la vidéo gratuitement (GPU Hugging Face, ou CPU du runner) et la publie ici.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card" aria-labelledby="new-title">
+      <h2 id="new-title">Nouvelle vidéo</h2>
+      <form id="form" autocomplete="off">
+        <label class="field">
+          <span>Description</span>
+          <textarea id="prompt" rows="4" maxlength="2000" required
+            placeholder="Ex. : un chat roux qui surfe sur une vague au coucher du soleil, plan cinématographique, ralenti"></textarea>
+        </label>
+
+        <div class="row">
+          <fieldset class="field">
+            <legend>Format</legend>
+            <div class="seg" role="radiogroup">
+              <label><input type="radio" name="format" value="landscape" checked><span>▭ 16:9</span></label>
+              <label><input type="radio" name="format" value="portrait"><span>▯ 9:16</span></label>
+              <label><input type="radio" name="format" value="square"><span>□ 1:1</span></label>
+            </div>
+          </fieldset>
+
+          <label class="field">
+            <span>Durée : <output id="durationOut">4 s</output></span>
+            <input id="duration" type="range" min="2" max="8" step="1" value="4">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Moteur</span>
+          <select id="engine">
+            <option value="auto">Auto — GPU Hugging Face gratuit, sinon CPU</option>
+            <option value="hf">GPU Hugging Face uniquement (meilleure qualité)</option>
+            <option value="cpu">CPU GitHub uniquement (illimité, plus lent)</option>
+          </select>
+        </label>
+
+        <label class="check">
+          <input id="enhance" type="checkbox" checked>
+          <span>Traduire et enrichir le prompt avec GitHub Models (gratuit)</span>
+        </label>
+
+        <details class="advanced">
+          <summary>Options avancées</summary>
+          <label class="field">
+            <span>Graine (vide = aléatoire)</span>
+            <input id="seed" type="number" min="0" max="4294967295" inputmode="numeric" placeholder="ex. 42">
+          </label>
+          <label class="field">
+            <span>Prompt négatif (moteur GPU)</span>
+            <input id="negative" type="text" maxlength="500" placeholder="ex. blurry, distorted, watermark">
+          </label>
+        </details>
+
+        <button id="submit" class="primary" type="submit">Générer la vidéo</button>
+        <p id="modeHint" class="hint"></p>
+        <p id="message" class="message" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section id="queueSection" class="card" aria-labelledby="queue-title" hidden>
+      <h2 id="queue-title">En cours</h2>
+      <ul id="queue" class="queue"></ul>
+    </section>
+
+    <section aria-labelledby="gallery-title">
+      <div class="gallery-head">
+        <h2 id="gallery-title">Galerie <span id="count" class="muted"></span></h2>
+        <button id="refresh" class="ghost" type="button">↻ Actualiser</button>
+      </div>
+      <div id="gallery" class="gallery"></div>
+    </section>
+
+    <section class="card settings" aria-labelledby="settings-title">
+      <details>
+        <summary id="settings-title">Mode direct (optionnel) — lancer sans passer par une issue</summary>
+        <p>Par défaut, le bouton ouvre une issue pré-remplie sur GitHub : vous la validez et le workflow démarre. Pour lancer directement depuis cette page, collez un <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">token « fine-grained »</a> limité à ce dépôt avec la permission <strong>Actions : Read and write</strong>. Il reste uniquement dans ce navigateur.</p>
+        <div class="row tight">
+          <input id="token" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false">
+          <button id="saveToken" class="ghost" type="button">Enregistrer</button>
+          <button id="clearToken" class="ghost" type="button">Oublier</button>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <p>Moteurs : <a href="https://huggingface.co/docs/hub/spaces-zerogpu" target="_blank" rel="noopener">Spaces ZeroGPU</a> (LTX-Video) · <a href="https://huggingface.co/ByteDance/AnimateDiff-Lightning" target="_blank" rel="noopener">AnimateDiff-Lightning</a> sur CPU · <a id="repoLink" href="#" target="_blank" rel="noopener">dépôt</a></p>
+  </footer>
+
+  <template id="cardTpl">
+    <article class="video">
+      <video controls loop muted playsinline preload="none"></video>
+      <div class="body">
+        <p class="prompt"></p>
+        <p class="meta"></p>
+        <div class="actions">
+          <a class="ghost small dl" download>Télécharger</a>
+          <button class="ghost small reuse" type="button">Réutiliser le prompt</button>
+          <a class="ghost small run" target="_blank" rel="noopener">Workflow</a>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

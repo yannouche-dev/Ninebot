@@ -20,9 +20,8 @@ jobs:
       - run: pip install -r ai-video/requirements-hf.txt
       - name: Probe spaces
         run: >-
-          python ai-video/scripts/probe_spaces.py --discover --limit 12
-          Lightricks/ltx-video-distilled Lightricks/ltx-2-distilled Lightricks/LTX-2-3
-          alexnasa/ltx-2-TURBO zerogpu-aoti/wan2-2-fp8da-aoti-faster
+          python ai-video/scripts/probe_spaces.py
+          Lightricks/LTX-2.5 Lightricks/LTX-2-3 linoyts/LTX-2-3-sync r3gm/wan2-2-fp8da-aoti-preview2 Wan-AI/Wan2.1
       - name: Enhance test
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -30,18 +29,33 @@ jobs:
           python ai-video/scripts/request.py parse --out req.json --json '{"prompt":"un chat roux qui fait du surf sur une vague au coucher du soleil","duration":"4"}'
           python ai-video/scripts/request.py enhance --file req.json
           cat req.json
-      - name: HF test (anonymous)
+      - name: GitHub Models debug
         continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python ai-video/scripts/generate.py --engine hf --request req.json --out out-hf
+          curl -sS -i -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://models.github.ai/catalog/models | head -c 1500; echo
+          curl -sS -i -X POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" -H "Content-Type: application/json" \
+            -d '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Say hi"}]}' https://models.github.ai/inference/chat/completions | head -c 1500; echo
+      - name: HF test LTX-2.5
+        continue-on-error: true
+        env:
+          AI_VIDEO_HF_SPACES: Lightricks/LTX-2.5
+        run: python ai-video/scripts/generate.py --engine hf --request req.json --out out-hf25
+      - name: HF test LTX-2.3
+        continue-on-error: true
+        env:
+          AI_VIDEO_HF_SPACES: Lightricks/LTX-2-3:/generate_video
+        run: python ai-video/scripts/generate.py --engine hf --request req.json --out out-hf23
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: selftest-hf
-          path: out-hf
+          path: out-hf*
           if-no-files-found: ignore
 
   cpu:
+    if: ${{ !contains(github.event.head_commit.message, '[skip-cpu]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
