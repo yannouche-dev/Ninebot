@@ -96,8 +96,8 @@
       "```",
       "",
     ].join("\n");
-    const params = new URLSearchParams({ title: `[video] ${short}`, body });
-    return `https://github.com/${repo.owner}/${repo.repo}/issues/new?${params}`;
+    const q = `title=${encodeURIComponent(`[video] ${short}`)}&body=${encodeURIComponent(body)}`;
+    return `https://github.com/${repo.owner}/${repo.repo}/issues/new?${q}`;
   }
 
   async function dispatch(req) {

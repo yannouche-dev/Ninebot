@@ -36,6 +36,17 @@ on:
         default: true
   issues:
     types: [opened]
+  # Réutilisable depuis un autre workflow (ex. génération planifiée).
+  workflow_call:
+    inputs:
+      prompt: {type: string, required: true}
+      engine: {type: string, default: auto}
+      format: {type: string, default: landscape}
+      duration: {type: string, default: "4"}
+      seed: {type: string, default: ""}
+      enhance: {type: boolean, default: true}
+    secrets:
+      HF_TOKEN: {required: false}
 
 permissions:
   contents: write
@@ -44,7 +55,7 @@ permissions:
 jobs:
   generate:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name != 'issues' ||
       (startsWith(github.event.issue.title, '[video]') &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
     runs-on: ubuntu-latest
@@ -73,6 +84,8 @@ jobs:
 
       - name: Lire la demande
         id: req
+        env:
+          INPUT_JSON: ${{ toJSON(inputs) }}
         run: python ai-video/scripts/request.py parse --out "$REQ"
 
       - name: Prévenir sur l'issue
@@ -95,7 +108,7 @@ jobs:
         id: cpu_deps
         if: steps.req.outputs.engine == 'cpu' || (steps.req.outputs.engine == 'auto' && steps.hf.outcome != 'success')
         run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
           pip install -r ai-video/requirements-cpu.txt
 
       - name: Moteur CPU (AnimateDiff-Lightning, illimité)
@@ -134,8 +147,13 @@ jobs:
 
       - name: Publier dans la galerie (branche ai-videos)
         id: publish
-        if: github.ref_name == github.event.repository.default_branch
-        run: bash ai-video/scripts/publish.sh "$OUT"
+        run: |
+          DEFAULT_BRANCH="$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
+          if [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]; then
+            echo "Exécution sur $GITHUB_REF_NAME (≠ $DEFAULT_BRANCH) : vidéo disponible en artefact uniquement."
+            exit 0
+          fi
+          bash ai-video/scripts/publish.sh "$OUT"
 
   pages:
     needs: generate

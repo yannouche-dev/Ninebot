@@ -128,8 +128,11 @@ def cmd_parse(args) -> int:
     event_path = os.environ.get("GITHUB_EVENT_PATH")
     event = json.loads(Path(event_path).read_text()) if event_path else {}
 
+    inputs = json.loads(os.environ.get("INPUT_JSON") or "null") or {}
     if args.json:
         raw = json.loads(args.json)
+    elif inputs.get("prompt"):  # workflow_dispatch / workflow_call (toJSON(inputs))
+        raw = inputs
     elif event_name == "issues":
         raw = _from_issue(event.get("issue") or {})
     else:

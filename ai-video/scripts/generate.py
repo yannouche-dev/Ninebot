@@ -295,6 +295,7 @@ def to_english(text: str) -> str:
         batch = tok([text], return_tensors="pt", truncation=True, max_length=256)
         out = model.generate(**batch, max_new_tokens=160)
         english = tok.decode(out[0], skip_special_tokens=True).strip()
+        del model, tok
         log(f"Traduction : {english}")
         return english or text
     except Exception as exc:  # noqa: BLE001
@@ -306,18 +307,25 @@ def run_cpu(req: dict, work: Path) -> dict:
     import torch
     from diffusers import AnimateDiffPipeline, EulerDiscreteScheduler, MotionAdapter
     from huggingface_hub import hf_hub_download
+    from PIL import Image
     from safetensors.torch import load_file
 
     torch.set_num_threads(os.cpu_count() or 4)
     steps = int(os.environ.get("AI_VIDEO_CPU_STEPS", 4))  # 1, 2, 4 or 8
     base = os.environ.get("AI_VIDEO_CPU_BASE", "emilianJR/epiCRealism")
-    fps = 8
-    frames = int(min(max(round(req["duration"] * fps / 8) * 8, 16), 48))
+    # One 16-frame window takes ~5 min on a 4-vCPU runner; more frames use
+    # FreeNoise windows and multiply the time. The clip is then slowed down
+    # (up to 2x) and motion-interpolated to 24 fps to reach the duration.
+    frames = int(os.environ.get("AI_VIDEO_CPU_FRAMES", 16))
+    play_fps = min(8.0, max(4.0, frames / req["duration"]))
     long_side = int(os.environ.get("AI_VIDEO_CPU_LONG_SIDE") or (512 if req["format"] == "square" else 640))
     width, height = frame_size(req["format"], long_side, 64)
     seed = req.get("seed")
     if seed is None:
         seed = int.from_bytes(os.urandom(4), "little")
+
+    subject = to_english(req["prompt"]) if req.get("enhance", True) else req["prompt"]
+    prompt = f"{subject}, {CPU_QUALITY}"
 
     log(f"Chargement AnimateDiff-Lightning {steps} étapes + {base}")
     ckpt = hf_hub_download("ByteDance/AnimateDiff-Lightning", f"animatediff_lightning_{steps}step_diffusers.safetensors")
@@ -328,10 +336,8 @@ def run_cpu(req: dict, work: Path) -> dict:
         pipe.scheduler.config, timestep_spacing="trailing", beta_schedule="linear"
     )
     if frames > 16:
-        pipe.enable_free_noise(context_length=16, context_stride=4)
+        pipe.enable_free_noise(context_length=16, context_stride=8)
 
-    subject = to_english(req["prompt"]) if req.get("enhance", True) else req["prompt"]
-    prompt = f"{subject}, {CPU_QUALITY}"
     log(f"Génération {frames} images {width}x{height}, seed {seed} : {prompt}")
     started = time.time()
     with torch.inference_mode():
@@ -343,17 +349,24 @@ def run_cpu(req: dict, work: Path) -> dict:
             width=width,
             height=height,
             generator=torch.Generator("cpu").manual_seed(seed),
+            output_type="latent",
         )
-    log(f"Diffusion terminée en {time.time() - started:.0f}s")
+        log(f"Diffusion terminée en {time.time() - started:.0f}s, décodage image par image…")
+        # Decoding all frames in one batch needs >16 GB of RAM: do it one by one.
+        latents = out.frames
+        vae = pipe.vae
+        pipe.unet = None
+        frames_dir = work / "frames"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        for i in range(latents.shape[2]):
+            img = vae.decode(latents[:, :, i] / vae.config.scaling_factor).sample[0]
+            arr = ((img.float() / 2 + 0.5).clamp(0, 1) * 255).round().to(torch.uint8).permute(1, 2, 0).numpy()
+            Image.fromarray(arr).save(frames_dir / f"{i:04d}.png")
+    log(f"Images prêtes en {time.time() - started:.0f}s")
 
-    frames_dir = work / "frames"
-    frames_dir.mkdir(parents=True, exist_ok=True)
-    for i, img in enumerate(out.frames[0]):
-        img.save(frames_dir / f"{i:04d}.png")
     raw = work / "cpu_raw.mp4"
-    # Motion-interpolate 8 fps → 24 fps for smoother playback.
     subprocess.run(
-        [ffmpeg_exe(), "-y", "-loglevel", "error", "-framerate", str(fps), "-i", str(frames_dir / "%04d.png"),
+        [ffmpeg_exe(), "-y", "-loglevel", "error", "-framerate", f"{play_fps:.3f}", "-i", str(frames_dir / "%04d.png"),
          "-vf", "minterpolate=fps=24:mi_mode=mci:mc_mode=aobmc:vsbmc=1",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", str(raw)],
         check=True,

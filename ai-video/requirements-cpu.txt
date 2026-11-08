@@ -1,10 +1,11 @@
 # Moteur "cpu" (AnimateDiff-Lightning sur le CPU du runner).
 # torch est installé à part depuis l'index CPU de PyTorch (voir le workflow).
-diffusers>=0.32
-transformers>=4.45
-accelerate>=1.0
-safetensors>=0.4
-huggingface_hub>=0.25
-imageio-ffmpeg>=0.5
+# Versions testées dans GitHub Actions (ubuntu-latest, Python 3.12).
+diffusers==0.42.1
+transformers==5.22.2
+accelerate==1.15.0
+safetensors==0.8.0
+huggingface_hub==2.4.0
+imageio-ffmpeg==0.8.1
 pillow>=10
 sentencepiece>=0.2  # traduction FR→EN (Helsinki-NLP/opus-mt-fr-en)
