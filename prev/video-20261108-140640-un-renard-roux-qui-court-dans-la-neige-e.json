@@ -1,0 +1,19 @@
+{
+  "id": "20261108-140640-un-renard-roux-qui-court-dans-la-neige-e",
+  "created": "2026-11-08T14:06:40+00:00",
+  "prompt": "un renard roux qui court dans la neige en forêt, lumière dorée",
+  "prompt_used": "a red fox running in the snow in the forest, golden light",
+  "engine": "cpu",
+  "model": "ByteDance/AnimateDiff-Lightning (4 steps) + emilianJR/epiCRealism",
+  "seed": 7,
+  "format": "portrait",
+  "width": 384,
+  "height": 640,
+  "duration": 2.66,
+  "audio": false,
+  "size": 324614,
+  "file": "20261108-140640-un-renard-roux-qui-court-dans-la-neige-e.mp4",
+  "poster": "20261108-140640-un-renard-roux-qui-court-dans-la-neige-e.jpg",
+  "run": "https://github.com/yannouche-dev/Ninebot/actions/runs/42488159374",
+  "issue": null
+}

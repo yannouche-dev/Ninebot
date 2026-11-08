@@ -1,0 +1,19 @@
+{
+  "id": "20261108-140641-un-chat-roux-qui-fait-du-surf-sur-une-va",
+  "created": "2026-11-08T14:06:41+00:00",
+  "prompt": "un chat roux qui fait du surf sur une vague au coucher du soleil",
+  "prompt_used": "An extreme wide shot captures a vibrant orange tabby cat wearing a small surfboard riding a large, rolling wave at sunset; the camera slowly tracks sideways following the cat and the wave, positioned from a low-angle viewpoint emphasizing the scale of the ocean and the dramatic sky, bathed in warm, rich cinematic lighting with deep orange and purple hues reflecting off the water's surface, while gentle, rhythmic ocean waves crash with a soft, ambient soundscape, accompanied by a mellow, slightly nostalgic acoustic guitar melody playing softly in the background, as the cat maintains a focused posture on the board against the backdrop of the intensely colored sunset.",
+  "engine": "hf",
+  "model": "Lightricks/LTX-2.5",
+  "seed": 1086156835,
+  "format": "landscape",
+  "width": 896,
+  "height": 512,
+  "duration": 4.04,
+  "audio": true,
+  "size": 866552,
+  "file": "20261108-140641-un-chat-roux-qui-fait-du-surf-sur-une-va.mp4",
+  "poster": "20261108-140641-un-chat-roux-qui-fait-du-surf-sur-une-va.jpg",
+  "run": "https://github.com/yannouche-dev/Ninebot/actions/runs/42488159374",
+  "issue": null
+}
