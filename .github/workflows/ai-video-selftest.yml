@@ -1,0 +1,70 @@
+name: "Vidéo IA – selftest (temporaire)"
+
+on:
+  push:
+    branches: [ccr-2aef11fd-zsc4rw]
+    paths: ['ai-video/**', '.github/workflows/ai-video-selftest.yml']
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r ai-video/requirements-hf.txt
+      - name: Probe spaces
+        run: >-
+          python ai-video/scripts/probe_spaces.py --discover --limit 12
+          Lightricks/ltx-video-distilled Lightricks/ltx-2-distilled Lightricks/LTX-2-3
+          alexnasa/ltx-2-TURBO zerogpu-aoti/wan2-2-fp8da-aoti-faster
+      - name: Enhance test
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python ai-video/scripts/request.py parse --out req.json --json '{"prompt":"un chat roux qui fait du surf sur une vague au coucher du soleil","duration":"4"}'
+          python ai-video/scripts/request.py enhance --file req.json
+          cat req.json
+      - name: HF test (anonymous)
+        continue-on-error: true
+        run: |
+          python ai-video/scripts/generate.py --engine hf --request req.json --out out-hf
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest-hf
+          path: out-hf
+          if-no-files-found: ignore
+
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          nproc; free -g; df -h /
+          time pip install torch --index-url https://download.pytorch.org/whl/cpu
+          time pip install -r ai-video/requirements-cpu.txt
+          pip freeze | grep -iE "torch|diffusers|transformers|accelerate|huggingface|safetensors"
+      - name: CPU test 2s
+        run: |
+          python ai-video/scripts/request.py parse --out req.json --json '{"prompt":"a ginger cat surfing a wave at sunset, ocean spray","duration":"2","seed":"42","format":"landscape"}'
+          time python ai-video/scripts/generate.py --engine cpu --request req.json --out out-cpu2
+      - name: CPU test 4s
+        run: |
+          python ai-video/scripts/request.py parse --out req4.json --json '{"prompt":"a ginger cat surfing a wave at sunset, ocean spray","duration":"4","seed":"42","format":"portrait"}'
+          time python ai-video/scripts/generate.py --engine cpu --request req4.json --out out-cpu4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest-cpu
+          path: out-cpu*
+          if-no-files-found: ignore
