@@ -1,0 +1,17 @@
+// Configuration du Worker Cloudflare (proxy Vast.ai). Déployé par .github/workflows/worker.yml.
+// ALLOWED_ORIGIN est fixé au déploiement : https://<propriétaire du dépôt>.github.io
+{
+  "name": "videogen-vast-proxy",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-04",
+  "workers_dev": true,
+  "preview_urls": false,
+  // Aucune journalisation persistante des requêtes (activée par défaut sur les nouveaux Workers).
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false }
+  },
+  "vars": {
+    "ALLOWED_ORIGIN": "https://example.github.io"
+  }
+}

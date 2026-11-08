@@ -1,0 +1,29 @@
+{
+  "name": "videogen",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Interface GitHub Pages qui pilote Vast.ai et ComfyUI pour générer des vidéos",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite --config web/vite.config.ts",
+    "build": "vite build --config web/vite.config.ts",
+    "build:test": "VIDEOGEN_TEST_BUILD=1 VIDEOGEN_HF_BASE=http://127.0.0.1:4310/hf VIDEOGEN_INSTANCE_BASE=http://127.0.0.1:4310/instance VAST_PROXY_URL=http://127.0.0.1:4311 vite build --config web/vite.config.ts",
+    "typecheck": "tsc -p web/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "npm run build:test && playwright test --trace off",
+    "mocks": "node mocks/start-all.mjs",
+    "check:workflows": "node tools/check-workflows.mjs"
+  },
+  "devDependencies": {
+    "@ffmpeg/core": "0.12.10",
+    "@ffmpeg/ffmpeg": "0.12.15",
+    "@playwright/test": "1.63.0",
+    "typescript": "6.0.2",
+    "vite": "8.3.6",
+    "vitest": "5.1.0",
+    "ws": "8.22.2"
+  }
+}

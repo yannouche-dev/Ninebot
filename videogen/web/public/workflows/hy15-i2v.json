@@ -1,0 +1,307 @@
+{
+  "8": {
+    "inputs": {
+      "samples": [
+        "125",
+        0
+      ],
+      "vae": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "10": {
+    "inputs": {
+      "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "11": {
+    "inputs": {
+      "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
+      "type": "hunyuan_video_15",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "Load CLIP (Dual)",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "12": {
+    "inputs": {
+      "unet_name": "hunyuanvideo1.5_720p_i2v_fp16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "44": {
+    "inputs": {
+      "text": "A feathered young dinosaur (with ruffled brown-and-white plumage, sharp claws, and a spiky crested head) moves alertly through a sun-dappled, dense coniferous forest. Sunbeams filter through the tall tree canopy, casting warm golden rays over the mossy undergrowth and ferns. The dinosaur lifts one clawed foot mid-step, head tilted sharply to scan for prey (or predators), its tail fanning slightly for balance. The air glows with soft mist, and the forest hums with quiet rustles—small plants sway as it passes, and dappled light dances across its textured feathers. The camera captures the dynamic, tense stillness of its movement, emphasizing the lush, ancient wilderness and the creature’s vivid, lifelike details.",
+      "clip": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "78": {
+    "inputs": {
+      "width": 1280,
+      "height": 720,
+      "length": 121,
+      "batch_size": 1,
+      "positive": [
+        "44",
+        0
+      ],
+      "negative": [
+        "93",
+        0
+      ],
+      "vae": [
+        "10",
+        0
+      ],
+      "start_image": [
+        "80",
+        0
+      ],
+      "clip_vision_output": [
+        "79",
+        0
+      ]
+    },
+    "class_type": "HunyuanVideo15ImageToVideo",
+    "_meta": {
+      "title": "HunyuanVideo15ImageToVideo",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "79": {
+    "inputs": {
+      "crop": "center",
+      "clip_vision": [
+        "81",
+        0
+      ],
+      "image": [
+        "80",
+        0
+      ]
+    },
+    "class_type": "CLIPVisionEncode",
+    "_meta": {
+      "title": "CLIP Vision Encode",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "80": {
+    "inputs": {
+      "image": "video_hunyuan_video_1.5_720p_i2v_input_image.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "81": {
+    "inputs": {
+      "clip_name": "sigclip_vision_patch14_384.safetensors"
+    },
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "Load CLIP Vision",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "93": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "101": {
+    "inputs": {
+      "fps": 24,
+      "bit_depth": "auto",
+      "color_space": "sRGB",
+      "chroma_subsampling": "auto",
+      "codec": "none",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create Video",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "102": {
+    "inputs": {
+      "filename_prefix": "video/hunyuan_video_1.5",
+      "format": "auto",
+      "format.codec": "h264",
+      "format.codec.encoding": "auto",
+      "codec": "auto",
+      "video": [
+        "101",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save Video",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "125": {
+    "inputs": {
+      "noise": [
+        "127",
+        0
+      ],
+      "guider": [
+        "129",
+        0
+      ],
+      "sampler": [
+        "128",
+        0
+      ],
+      "sigmas": [
+        "126",
+        0
+      ],
+      "latent_image": [
+        "78",
+        2
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "126": {
+    "inputs": {
+      "scheduler": "simple",
+      "steps": 20,
+      "denoise": 1,
+      "model": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "BasicScheduler",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "127": {
+    "inputs": {
+      "noise_seed": 887963123424675
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "128": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "129": {
+    "inputs": {
+      "cfg": 6,
+      "model": [
+        "130",
+        0
+      ],
+      "positive": [
+        "78",
+        0
+      ],
+      "negative": [
+        "78",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG Guider",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  },
+  "130": {
+    "inputs": {
+      "shift": 7,
+      "model": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.68"
+    }
+  }
+}

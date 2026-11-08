@@ -1,0 +1,88 @@
+# Reverse proxy devant ComfyUI et l'agent videogen.
+# Variables d'environnement lues au démarrage : COMFY_ACCESS_TOKEN, ALLOWED_ORIGIN, VG_LOG_DIR.
+# Écoute uniquement en local (127.0.0.1:28080) : seul cloudflared (tunnel HTTPS) y accède.
+# Ports internes peu courants pour ne pas entrer en conflit avec un éventuel portail de l'image :
+# ComfyUI 28188, agent 28189, Caddy 28080, métriques cloudflared 28241.
+{
+	admin off
+	persist_config off
+	auto_https off
+	# Le journal d'erreurs de Caddy écrit l'URI brute (avec ?token=) : on masque le paramètre
+	# et l'en-tête Authorization avant toute écriture.
+	log default {
+		output file {$VG_LOG_DIR:/workspace/videogen/logs}/caddy.log {
+			roll_size 5MiB
+			roll_keep 2
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					replace token REDACTED
+				}
+				request>headers>Authorization replace REDACTED
+				request>headers>Cookie delete
+			}
+		}
+	}
+}
+
+:28080 {
+	bind 127.0.0.1
+
+	# Pré-requête CORS : jamais authentifiée (le navigateur n'envoie pas de jeton),
+	# acceptée uniquement depuis l'origine de l'interface.
+	@preflight {
+		method OPTIONS
+		header Origin {$ALLOWED_ORIGIN}
+	}
+	handle @preflight {
+		header Access-Control-Allow-Origin {$ALLOWED_ORIGIN}
+		header Access-Control-Allow-Methods "GET, POST, DELETE, OPTIONS"
+		header Access-Control-Allow-Headers "Authorization, Content-Type"
+		header Access-Control-Max-Age 600
+		header Vary Origin
+		respond 204
+	}
+
+	# Jeton exigé : en-tête « Authorization: Bearer <jeton> » ou « ?token=<jeton> » (WebSocket).
+	# La garde de longueur empêche qu'un jeton vide n'ouvre l'accès.
+	@authed `"{$COMFY_ACCESS_TOKEN}".size() >= 32 && ({header.Authorization} == "Bearer {$COMFY_ACCESS_TOKEN}" || {query.token} == "{$COMFY_ACCESS_TOKEN}")`
+
+	handle @authed {
+		header Access-Control-Allow-Origin {$ALLOWED_ORIGIN}
+		header Vary Origin
+		header Cache-Control no-store
+		uri query -token
+
+		handle /videogen/* {
+			reverse_proxy 127.0.0.1:28189 {
+				header_up -Authorization
+				header_up -Cookie
+			}
+		}
+
+		handle {
+			reverse_proxy 127.0.0.1:28188 {
+				# ComfyUI refuse les requêtes « cross-site » : on lui présente une requête locale.
+				header_up Host 127.0.0.1:28188
+				header_up -Authorization
+				header_up -Origin
+				header_up -Sec-Fetch-*
+				header_up -Cookie
+				# ComfyUI ajoute ses propres en-têtes CORS : on les retire pour éviter les doublons.
+				header_down -Access-Control-Allow-Origin
+				header_down -Access-Control-Allow-Credentials
+				header_down -Access-Control-Allow-Methods
+				header_down -Access-Control-Allow-Headers
+				stream_close_delay 5m
+			}
+		}
+	}
+
+	handle {
+		header Access-Control-Allow-Origin {$ALLOWED_ORIGIN}
+		header Vary Origin
+		respond "unauthorized" 401
+	}
+}

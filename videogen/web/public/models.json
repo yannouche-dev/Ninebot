@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "comfyVersion": "v0.44.2",
+  "templatesVersion": "0.11.103",
+  "families": {
+    "ltx25": { "label": "LTX-2.5", "approxGB": 52, "default": true, "note": "Dépôt Lightricks/LTX-2.5 protégé : accepter la licence sur huggingface.co." },
+    "wan22": { "label": "Wan 2.2 (14B)", "approxGB": 70, "default": false },
+    "hunyuan15": { "label": "HunyuanVideo 1.5 (720p)", "approxGB": 45, "default": false }
+  },
+  "resolutionPresets": {
+    "480p": { "label": "480p", "pixels": 409920 },
+    "540p": { "label": "540p", "pixels": 518400 },
+    "720p": { "label": "720p", "pixels": 921600 },
+    "1080p": { "label": "1080p", "pixels": 2073600 }
+  },
+  "ratios": { "16:9": 1.7777777778, "9:16": 0.5625, "1:1": 1 },
+  "models": [
+    {
+      "id": "ltx25-t2v",
+      "family": "ltx25",
+      "label": "LTX-2.5 · Texte → vidéo",
+      "mode": "t2v",
+      "audio": true,
+      "workflow": "workflows/ltx25-t2v.json",
+      "template": "video_ltx2_5_t2v.json",
+      "extendWith": "ltx25-i2v",
+      "output": [{ "node": "75", "input": "filename_prefix" }],
+      "resolution": { "multiple": 64, "presets": ["540p", "720p", "1080p"], "default": "720p" },
+      "duration": { "min": 1, "max": 20, "default": 5, "targets": [{ "node": "405:362", "input": "value" }] },
+      "fps": { "options": [24, 25, 30, 48, 50], "default": 24, "targets": [{ "node": "405:361", "input": "value" }] },
+      "params": {
+        "prompt": { "targets": [{ "node": "405:376", "input": "value" }] },
+        "negative": { "targets": [{ "node": "405:373", "input": "text" }] },
+        "width": { "targets": [{ "node": "405:372", "input": "value" }] },
+        "height": { "targets": [{ "node": "405:360", "input": "value" }] },
+        "seed": { "targets": [{ "node": "405:339", "input": "noise_seed" }, { "node": "405:338", "input": "noise_seed" }] },
+        "enhancePrompt": { "label": "Améliorer le prompt (Gemma)", "default": false, "targets": [{ "node": "405:383", "input": "value" }] }
+      }
+    },
+    {
+      "id": "ltx25-i2v",
+      "family": "ltx25",
+      "label": "LTX-2.5 · Image → vidéo",
+      "mode": "i2v",
+      "audio": true,
+      "workflow": "workflows/ltx25-i2v.json",
+      "template": "video_ltx2_5_i2v.json",
+      "extendWith": "ltx25-i2v",
+      "output": [{ "node": "75", "input": "filename_prefix" }],
+      "resolution": { "multiple": 64, "presets": ["540p", "720p", "1080p"], "default": "720p" },
+      "duration": { "min": 1, "max": 20, "default": 5, "targets": [{ "node": "398:362", "input": "value" }] },
+      "fps": { "options": [24, 25, 30, 48, 50], "default": 24, "targets": [{ "node": "398:361", "input": "value" }] },
+      "params": {
+        "prompt": { "targets": [{ "node": "398:376", "input": "value" }] },
+        "negative": { "targets": [{ "node": "398:373", "input": "text" }] },
+        "width": { "targets": [{ "node": "398:372", "input": "value" }] },
+        "height": { "targets": [{ "node": "398:360", "input": "value" }] },
+        "seed": { "targets": [{ "node": "398:339", "input": "noise_seed" }, { "node": "398:338", "input": "noise_seed" }] },
+        "startImage": { "required": true, "targets": [{ "node": "395", "input": "image" }] },
+        "enhancePrompt": { "label": "Améliorer le prompt (Gemma)", "default": false, "targets": [{ "node": "398:383", "input": "value" }] }
+      }
+    },
+    {
+      "id": "ltx25-flf2v",
+      "family": "ltx25",
+      "label": "LTX-2.5 · Première + dernière image",
+      "mode": "flf2v",
+      "audio": true,
+      "workflow": "workflows/ltx25-flf2v.json",
+      "template": "video_ltx2_5_flf2v.json",
+      "extendWith": "ltx25-i2v",
+      "output": [{ "node": "68", "input": "filename_prefix" }],
+      "resolution": { "multiple": 32, "presets": ["540p", "720p", "1080p"], "default": "720p" },
+      "duration": { "min": 1, "max": 20, "default": 5, "targets": [{ "node": "251:198", "input": "value" }] },
+      "fps": { "options": [24, 25, 30, 48, 50], "default": 24, "targets": [{ "node": "251:205", "input": "value" }] },
+      "params": {
+        "prompt": { "targets": [{ "node": "251:252", "input": "value" }] },
+        "negative": { "targets": [{ "node": "251:217", "input": "text" }] },
+        "width": { "targets": [{ "node": "251:215", "input": "value" }] },
+        "height": { "targets": [{ "node": "251:216", "input": "value" }] },
+        "seed": { "targets": [{ "node": "251:196", "input": "noise_seed" }] },
+        "startImage": { "required": true, "targets": [{ "node": "31", "input": "image" }] },
+        "endImage": { "required": true, "targets": [{ "node": "39", "input": "image" }] },
+        "enhancePrompt": { "label": "Améliorer le prompt (Gemma)", "default": false, "targets": [{ "node": "251:250", "input": "value" }] }
+      }
+    },
+    {
+      "id": "wan22-t2v",
+      "family": "wan22",
+      "label": "Wan 2.2 14B · Texte → vidéo",
+      "mode": "t2v",
+      "audio": false,
+      "workflow": "workflows/wan22-t2v.json",
+      "template": "video_wan2_2_14B_t2v.json",
+      "extendWith": "wan22-i2v",
+      "output": [{ "node": "80", "input": "filename_prefix" }],
+      "resolution": { "multiple": 16, "presets": ["480p", "720p"], "default": "720p" },
+      "duration": { "min": 1, "max": 10, "default": 5, "targets": [{ "node": "128:126", "input": "value" }] },
+      "fps": { "options": [16], "default": 16, "targets": [{ "node": "128:125", "input": "value" }] },
+      "params": {
+        "prompt": { "targets": [{ "node": "128:89", "input": "text" }] },
+        "negative": { "targets": [{ "node": "128:72", "input": "text" }] },
+        "width": { "targets": [{ "node": "128:74", "input": "width" }] },
+        "height": { "targets": [{ "node": "128:74", "input": "height" }] },
+        "seed": { "targets": [{ "node": "128:81", "input": "noise_seed" }] },
+        "fast": { "label": "Rapide : LoRA lightx2v 4 étapes", "default": false, "targets": [{ "node": "128:129", "input": "value" }], "hides": ["steps", "cfg"] },
+        "steps": { "min": 4, "max": 50, "default": 20, "targets": [{ "node": "128:114", "input": "value" }], "half": [{ "node": "128:115", "input": "value" }] },
+        "cfg": { "min": 1, "max": 10, "step": 0.1, "default": 3.5, "targets": [{ "node": "128:116", "input": "value" }] }
+      }
+    },
+    {
+      "id": "wan22-i2v",
+      "family": "wan22",
+      "label": "Wan 2.2 14B · Image → vidéo",
+      "mode": "i2v",
+      "audio": false,
+      "workflow": "workflows/wan22-i2v.json",
+      "template": "video_wan2_2_14B_i2v.json",
+      "extendWith": "wan22-i2v",
+      "output": [{ "node": "108", "input": "filename_prefix" }],
+      "resolution": { "multiple": 16, "presets": ["480p", "720p"], "default": "720p" },
+      "duration": { "min": 1, "max": 10, "default": 5, "targets": [{ "node": "129:161", "input": "value" }] },
+      "fps": { "options": [16], "default": 16, "targets": [{ "node": "129:162", "input": "value" }] },
+      "params": {
+        "prompt": { "targets": [{ "node": "129:93", "input": "text" }] },
+        "negative": { "targets": [{ "node": "129:89", "input": "text" }] },
+        "width": { "targets": [{ "node": "129:98", "input": "width" }] },
+        "height": { "targets": [{ "node": "129:98", "input": "height" }] },
+        "seed": { "targets": [{ "node": "129:86", "input": "noise_seed" }] },
+        "startImage": { "required": true, "targets": [{ "node": "97", "input": "image" }] },
+        "fast": { "label": "Rapide : LoRA lightx2v 4 étapes", "default": false, "targets": [{ "node": "129:131", "input": "value" }], "hides": ["steps", "cfg"] },
+        "steps": { "min": 4, "max": 50, "default": 20, "targets": [{ "node": "129:128", "input": "value" }], "half": [{ "node": "129:127", "input": "value" }] },
+        "cfg": { "min": 1, "max": 10, "step": 0.1, "default": 3.5, "targets": [{ "node": "129:126", "input": "value" }] }
+      }
+    },
+    {
+      "id": "hy15-t2v",
+      "family": "hunyuan15",
+      "label": "HunyuanVideo 1.5 · Texte → vidéo",
+      "mode": "t2v",
+      "audio": false,
+      "workflow": "workflows/hy15-t2v.json",
+      "template": "video_hunyuan_video_1.5_720p_t2v.json",
+      "extendWith": "hy15-i2v",
+      "output": [{ "node": "102", "input": "filename_prefix" }],
+      "resolution": { "multiple": 16, "presets": ["480p", "720p"], "default": "720p" },
+      "duration": { "min": 1, "max": 10, "default": 5, "frames": [{ "node": "124", "input": "length" }] },
+      "fps": { "options": [24], "default": 24, "targets": [{ "node": "101", "input": "fps" }] },
+      "params": {
+        "prompt": { "targets": [{ "node": "44", "input": "text" }] },
+        "negative": { "targets": [{ "node": "93", "input": "text" }] },
+        "width": { "targets": [{ "node": "124", "input": "width" }] },
+        "height": { "targets": [{ "node": "124", "input": "height" }] },
+        "seed": { "targets": [{ "node": "129", "input": "noise_seed" }] },
+        "steps": { "min": 4, "max": 50, "default": 20, "targets": [{ "node": "128", "input": "steps" }] },
+        "cfg": { "min": 1, "max": 12, "step": 0.1, "default": 6, "targets": [{ "node": "131", "input": "cfg" }] }
+      }
+    },
+    {
+      "id": "hy15-i2v",
+      "family": "hunyuan15",
+      "label": "HunyuanVideo 1.5 · Image → vidéo",
+      "mode": "i2v",
+      "audio": false,
+      "workflow": "workflows/hy15-i2v.json",
+      "template": "video_hunyuan_video_1.5_720p_i2v.json",
+      "extendWith": "hy15-i2v",
+      "output": [{ "node": "102", "input": "filename_prefix" }],
+      "resolution": { "multiple": 16, "presets": ["480p", "720p"], "default": "720p" },
+      "duration": { "min": 1, "max": 10, "default": 5, "frames": [{ "node": "78", "input": "length" }] },
+      "fps": { "options": [24], "default": 24, "targets": [{ "node": "101", "input": "fps" }] },
+      "params": {
+        "prompt": { "targets": [{ "node": "44", "input": "text" }] },
+        "negative": { "targets": [{ "node": "93", "input": "text" }] },
+        "width": { "targets": [{ "node": "78", "input": "width" }] },
+        "height": { "targets": [{ "node": "78", "input": "height" }] },
+        "seed": { "targets": [{ "node": "127", "input": "noise_seed" }] },
+        "startImage": { "required": true, "targets": [{ "node": "80", "input": "image" }] },
+        "steps": { "min": 4, "max": 50, "default": 20, "targets": [{ "node": "126", "input": "steps" }] },
+        "cfg": { "min": 1, "max": 12, "step": 0.1, "default": 6, "targets": [{ "node": "129", "input": "cfg" }] }
+      }
+    }
+  ]
+}

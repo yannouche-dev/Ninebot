@@ -1,0 +1,152 @@
+{
+  "generated_by": "tools/convert-templates.mjs",
+  "families": {
+    "ltx25": {
+      "label": "LTX-2.5",
+      "files": [
+        {
+          "repo": "Lightricks/LTX-2.5",
+          "path": "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+          "dir": "latent_upscale_models",
+          "name": "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors"
+        },
+        {
+          "repo": "Lightricks/LTX-2.5",
+          "path": "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+          "dir": "diffusion_models",
+          "name": "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors"
+        },
+        {
+          "repo": "Lightricks/LTX-2.5",
+          "path": "vae/ltx-2.5-video-vae-bf16.safetensors",
+          "dir": "vae",
+          "name": "ltx-2.5-video-vae-bf16.safetensors"
+        },
+        {
+          "repo": "Lightricks/LTX-2.5",
+          "path": "vae/ltx-2.5-audio-vae-bf16.safetensors",
+          "dir": "vae",
+          "name": "ltx-2.5-audio-vae-bf16.safetensors"
+        },
+        {
+          "repo": "Lightricks/LTX-2.5",
+          "path": "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+          "dir": "text_encoders",
+          "name": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/gemma-4",
+          "path": "text_encoders/gemma4_e2b_it_int8_convrot.safetensors",
+          "dir": "text_encoders",
+          "name": "gemma4_e2b_it_int8_convrot.safetensors"
+        }
+      ]
+    },
+    "wan22": {
+      "label": "Wan 2.2 (14B)",
+      "files": [
+        {
+          "repo": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+          "path": "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+          "dir": "text_encoders",
+          "name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+          "path": "split_files/vae/wan_2.1_vae.safetensors",
+          "dir": "vae",
+          "name": "wan_2.1_vae.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+          "path": "split_files/diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+          "dir": "diffusion_models",
+          "name": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+          "path": "split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+          "dir": "diffusion_models",
+          "name": "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+          "path": "split_files/loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors",
+          "dir": "loras",
+          "name": "wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+          "path": "split_files/loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors",
+          "dir": "loras",
+          "name": "wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+          "path": "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+          "dir": "diffusion_models",
+          "name": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+          "path": "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+          "dir": "diffusion_models",
+          "name": "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+          "path": "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+          "dir": "loras",
+          "name": "wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+          "path": "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+          "dir": "loras",
+          "name": "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors"
+        }
+      ]
+    },
+    "hunyuan15": {
+      "label": "HunyuanVideo 1.5 (720p)",
+      "files": [
+        {
+          "repo": "Comfy-Org/HunyuanVideo_1.5_repackaged",
+          "path": "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+          "dir": "text_encoders",
+          "name": "qwen_2.5_vl_7b_fp8_scaled.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/HunyuanVideo_1.5_repackaged",
+          "path": "split_files/text_encoders/byt5_small_glyphxl_fp16.safetensors",
+          "dir": "text_encoders",
+          "name": "byt5_small_glyphxl_fp16.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/HunyuanVideo_1.5_repackaged",
+          "path": "split_files/vae/hunyuanvideo15_vae_fp16.safetensors",
+          "dir": "vae",
+          "name": "hunyuanvideo15_vae_fp16.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/HunyuanVideo_1.5_repackaged",
+          "path": "split_files/diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors",
+          "dir": "diffusion_models",
+          "name": "hunyuanvideo1.5_720p_t2v_fp16.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/sigclip_vision_384",
+          "path": "sigclip_vision_patch14_384.safetensors",
+          "dir": "clip_vision",
+          "name": "sigclip_vision_patch14_384.safetensors"
+        },
+        {
+          "repo": "Comfy-Org/HunyuanVideo_1.5_repackaged",
+          "path": "split_files/diffusion_models/hunyuanvideo1.5_720p_i2v_fp16.safetensors",
+          "dir": "diffusion_models",
+          "name": "hunyuanvideo1.5_720p_i2v_fp16.safetensors"
+        }
+      ]
+    }
+  }
+}

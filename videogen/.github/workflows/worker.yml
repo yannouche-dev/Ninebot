@@ -1,0 +1,61 @@
+# Déploiement du proxy Vast (Cloudflare Worker) avec wrangler.
+# Prérequis (une fois) : secrets CLOUDFLARE_API_TOKEN et CLOUDFLARE_ACCOUNT_ID dans
+# Réglages > Secrets and variables > Actions. Voir README, « Première configuration ».
+name: Déployer le proxy Vast (Cloudflare Worker)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Secrets Cloudflare présents ?
+        id: check
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCOUNT" ]; then
+            echo "::warning::Secrets CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID absents : Worker non déployé (voir README)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Origine autorisée (GitHub Pages du propriétaire du dépôt)
+        id: origin
+        if: steps.check.outputs.ok == 'true'
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "origin=https://$(echo "$OWNER" | tr '[:upper:]' '[:lower:]').github.io" >> "$GITHUB_OUTPUT"
+      - uses: cloudflare/wrangler-action@v4
+        id: wrangler
+        if: steps.check.outputs.ok == 'true'
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          wranglerVersion: '4.158.0'
+          command: deploy --var ALLOWED_ORIGIN:${{ steps.origin.outputs.origin }}
+      - name: URL du proxy
+        if: steps.check.outputs.ok == 'true'
+        env:
+          URL: ${{ steps.wrangler.outputs.deployment-url }}
+          ORIGIN: ${{ steps.origin.outputs.origin }}
+        run: |
+          {
+            echo "### Proxy Vast déployé"
+            echo ""
+            echo "URL à saisir dans l'écran **Clés** de l'interface : \`$URL\`"
+            echo ""
+            echo "Origine autorisée : \`$ORIGIN\`"
+          } >> "$GITHUB_STEP_SUMMARY"

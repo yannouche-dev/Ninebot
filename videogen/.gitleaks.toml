@@ -1,0 +1,13 @@
+# Scan de secrets (gitleaks) : règles par défaut + exception pour les valeurs FACTICES des tests et mocks.
+# Une exception ne s'applique que si le fichier est dans tests/ ou mocks/ ET que la valeur ressemble à un
+# faux (« test », « 0123456789 », « abcdef »…) : une vraie clé collée par erreur reste détectée.
+title = "videogen"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Valeurs factices des tests et des mocks"
+condition = "AND"
+paths = ['''^(tests|mocks)/''']
+regexes = ['''(?i)(test|fake|0123456789|abcdef|VASTKEY|SECRETTOKEN)''']

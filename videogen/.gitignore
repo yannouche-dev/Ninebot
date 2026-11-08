@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-test/
+web/public/vendor/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+.wrangler/
