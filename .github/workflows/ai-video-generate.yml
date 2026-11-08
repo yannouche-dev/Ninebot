@@ -31,7 +31,7 @@ on:
         type: string
         default: ""
       enhance:
-        description: "Traduire et enrichir le prompt avec GitHub Models (gratuit)"
+        description: "Améliorer le prompt (enhancer LTX côté GPU, traduction FR→EN côté CPU)"
         type: boolean
         default: true
   issues:
@@ -40,7 +40,6 @@ on:
 permissions:
   contents: write
   issues: write
-  models: read
 
 jobs:
   generate:
@@ -53,11 +52,9 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       GH_TOKEN: ${{ github.token }}
-      GITHUB_TOKEN: ${{ github.token }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       # Optionnel (Settings > Secrets and variables > Actions > Variables) :
       AI_VIDEO_HF_SPACES: ${{ vars.AI_VIDEO_HF_SPACES }}
-      AI_VIDEO_LLM: ${{ vars.AI_VIDEO_LLM }}
       REQ: /tmp/ai-video/request.json
       OUT: /tmp/ai-video/out
     outputs:
@@ -87,11 +84,6 @@ jobs:
 
       - name: Outils communs
         run: pip install -r ai-video/requirements-hf.txt
-
-      - name: Améliorer le prompt (GitHub Models)
-        if: steps.req.outputs.enhance == 'true'
-        continue-on-error: true
-        run: python ai-video/scripts/request.py enhance --file "$REQ"
 
       - name: Moteur GPU gratuit (Space Hugging Face)
         id: hf

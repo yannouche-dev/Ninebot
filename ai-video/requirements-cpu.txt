@@ -7,3 +7,4 @@ safetensors>=0.4
 huggingface_hub>=0.25
 imageio-ffmpeg>=0.5
 pillow>=10
+sentencepiece>=0.2  # traduction FR→EN (Helsinki-NLP/opus-mt-fr-en)

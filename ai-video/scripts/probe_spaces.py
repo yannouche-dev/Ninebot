@@ -69,11 +69,13 @@ def probe(space_id: str) -> None:
         print(f"  endpoint {name}")
         for p in params:
             enum = (p.get("type") or {}).get("enum")
+            desc = (p.get("python_type") or {}).get("description") or ""
             print(
-                "    - {name} [{comp}] {ptype} default={default!r}{enum}".format(
+                "    - {name} [{comp}] {ptype}{desc} default={default!r}{enum}".format(
                     name=p.get("parameter_name") or p.get("label"),
                     comp=p.get("component"),
                     ptype=(p.get("python_type") or {}).get("type"),
+                    desc=f" ({desc})" if "between" in desc else "",
                     default=p.get("parameter_default"),
                     enum=f" choices={enum}" if enum else "",
                 )

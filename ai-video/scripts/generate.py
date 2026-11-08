@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -31,7 +32,11 @@ RATIOS = {"landscape": (16, 9), "portrait": (9, 16), "square": (1, 1)}
 
 # "space_id" or "space_id:/api_name", tried in order. Override with the
 # AI_VIDEO_HF_SPACES repository variable (comma separated).
-DEFAULT_HF_SPACES = "Lightricks/ltx-video-distilled:/text_to_video"
+DEFAULT_HF_SPACES = ",".join([
+    "Lightricks/LTX-2.5:/run",                         # LTX-2.5 distilled, video + audio
+    "Lightricks/LTX-2-3:/generate_video",              # LTX-2.3, video + audio
+    "Lightricks/ltx-video-distilled:/text_to_video",   # LTX-Video 0.9.x, silent
+])
 
 
 def log(msg: str) -> None:
@@ -95,6 +100,34 @@ def _choose_enum(enum: list, key: str, fmt: str, size: tuple[int, int], default)
     return default if default is not None else enum[0]
 
 
+def _bounds(p: dict) -> tuple[float, float] | None:
+    """Slider limits, from the "numeric value between A and B" API description."""
+    text = " ".join(
+        str((p.get(k) or {}).get("description") or "") for k in ("type", "python_type") if isinstance(p.get(k), dict)
+    )
+    m = re.search(r"between\s+(-?\d+(?:\.\d+)?)\s+and\s+(-?\d+(?:\.\d+)?)", text)
+    return (float(m.group(1)), float(m.group(2))) if m else None
+
+
+def _clamp(p: dict, value):
+    b = _bounds(p)
+    if b is None or not isinstance(value, (int, float)):
+        return value
+    clamped = min(max(value, b[0]), b[1])
+    return int(clamped) if isinstance(value, int) else clamped
+
+
+def _hf_size(params: list, fmt: str) -> tuple[int, int]:
+    """Frame size for the request format, raised to the Space's minimum side."""
+    long_side = int(os.environ.get("AI_VIDEO_HF_LONG_SIDE") or (640 if fmt == "square" else 768))
+    w, h = frame_size(fmt, long_side, 32)
+    mins = [b[0] for p in params if re.search(r"height|width", _param_key(p)) and (b := _bounds(p))]
+    if mins and min(w, h) < max(mins):
+        f = max(mins) / min(w, h)
+        w, h = (math.ceil(v * f / 32 - 1e-6) * 32 for v in (w, h))
+    return w, h
+
+
 def _fill_param(p: dict, req: dict, size: tuple[int, int]):
     key = _param_key(p)
     ptype = str((p.get("python_type") or {}).get("type") or "")
@@ -114,6 +147,8 @@ def _fill_param(p: dict, req: dict, size: tuple[int, int]):
     if is_bool:
         if "random" in key and "seed" in key:
             return seed is None
+        if "enhance" in key and "prompt" in key or re.search(r"\bdo_enhance\b", key):
+            return bool(req.get("enhance", True))
         return default
     if enum:
         return _choose_enum(enum, key, req["format"], size, default)
@@ -123,11 +158,11 @@ def _fill_param(p: dict, req: dict, size: tuple[int, int]):
         return req.get("prompt_en") or req["prompt"]
     if is_num:
         if "height" in key:
-            return size[1]
+            return _clamp(p, size[1])
         if "width" in key:
-            return size[0]
-        if "duration" in key or "second" in key:
-            return req["duration"]
+            return _clamp(p, size[0])
+        if "duration" in key or re.search(r"\bseconds?\b|duration_s", key):
+            return _clamp(p, req["duration"])
         if "seed" in key:
             return seed if seed is not None else (default if default is not None else 0)
     return default
@@ -168,6 +203,15 @@ def _find_video(value):
     return None
 
 
+def _find_text(value):
+    """A long text output (e.g. the enhanced prompt actually sent to the model)."""
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if isinstance(item, str) and len(item) > 30 and not os.path.exists(item):
+                return item
+    return None
+
+
 def _find_seed(value):
     if isinstance(value, (list, tuple)):
         for item in value:
@@ -192,8 +236,7 @@ def run_hf(req: dict, work: Path) -> dict:
             endpoints = client.view_api(print_info=False, return_format="dict")["named_endpoints"]
             api_name = _pick_endpoint(endpoints, api_name or None)
             params = endpoints[api_name].get("parameters", [])
-            long_side = int(os.environ.get("AI_VIDEO_HF_LONG_SIDE") or (640 if req["format"] == "square" else 768))
-            size = frame_size(req["format"], long_side, 32)
+            size = _hf_size(params, req["format"])
             args = [_fill_param(p, req, size) for p in params]
             for p, a in zip(params, args):
                 shown = a if not isinstance(a, str) or len(a) < 80 else a[:77] + "..."
@@ -210,20 +253,53 @@ def run_hf(req: dict, work: Path) -> dict:
                 "model": space,
                 "endpoint": api_name,
                 "seed": _find_seed(result) if req.get("seed") is None else req["seed"],
+                "prompt_used": _find_text(result),
                 "width": size[0],
                 "height": size[1],
             }
         except Exception as exc:  # noqa: BLE001
             msg = f"{space}: {type(exc).__name__}: {str(exc)[:500]}"
-            if re.search(r"quota|ZeroGPU|exceeded", str(exc), re.I):
-                msg += "  → quota GPU gratuit épuisé (recharge 24 h après la 1re utilisation)."
             log(msg)
             errors.append(msg)
+            if re.search(r"quota|exceeded your|GPU limit", str(exc), re.I):
+                # Every ZeroGPU Space draws on the same per-account daily quota.
+                log("→ Quota GPU gratuit épuisé (il se recharge 24 h après la 1re utilisation).")
+                break
     raise RuntimeError("Tous les Spaces ont échoué:\n" + "\n".join(errors))
 
 
 # =========================================================== CPU (AnimateDiff)
 CPU_QUALITY = "masterpiece, best quality, highly detailed, cinematic lighting, smooth motion"
+FR_HINTS = set(
+    "le la les un une des du de d l qui sur sous dans avec et au aux en est son sa ses par pour "
+    "vers entre chat chien voiture ciel nuit mer plage ville forêt montagne coucher soleil".split()
+)
+
+
+def looks_french(text: str) -> bool:
+    words = re.findall(r"[a-zàâçéèêëîïôûùüÿœ]+", text.lower())
+    score = sum(w in FR_HINTS for w in words) + len(re.findall(r"[àâçéèêëîïôûùüÿœ]", text.lower()))
+    return score >= 2
+
+
+def to_english(text: str) -> str:
+    """Stable Diffusion 1.5 only understands English: translate French prompts locally."""
+    if not looks_french(text):
+        return text
+    try:
+        from transformers import MarianMTModel, MarianTokenizer
+
+        name = "Helsinki-NLP/opus-mt-fr-en"
+        tok = MarianTokenizer.from_pretrained(name)
+        model = MarianMTModel.from_pretrained(name)
+        batch = tok([text], return_tensors="pt", truncation=True, max_length=256)
+        out = model.generate(**batch, max_new_tokens=160)
+        english = tok.decode(out[0], skip_special_tokens=True).strip()
+        log(f"Traduction : {english}")
+        return english or text
+    except Exception as exc:  # noqa: BLE001
+        log(f"Traduction impossible ({exc}), prompt d'origine utilisé.")
+        return text
 
 
 def run_cpu(req: dict, work: Path) -> dict:
@@ -254,8 +330,8 @@ def run_cpu(req: dict, work: Path) -> dict:
     if frames > 16:
         pipe.enable_free_noise(context_length=16, context_stride=4)
 
-    prompt = req.get("prompt_short") or req.get("prompt_en") or req["prompt"]
-    prompt = f"{prompt}, {CPU_QUALITY}"
+    subject = to_english(req["prompt"]) if req.get("enhance", True) else req["prompt"]
+    prompt = f"{subject}, {CPU_QUALITY}"
     log(f"Génération {frames} images {width}x{height}, seed {seed} : {prompt}")
     started = time.time()
     with torch.inference_mode():
@@ -286,6 +362,7 @@ def run_cpu(req: dict, work: Path) -> dict:
         "file": str(raw),
         "engine": "cpu",
         "model": f"ByteDance/AnimateDiff-Lightning ({steps} steps) + {base}",
+        "prompt_used": subject if subject != req["prompt"] else None,
         "seed": seed,
         "width": width,
         "height": height,
@@ -323,8 +400,7 @@ def finalize(result: dict, req: dict, out: Path) -> dict:
         "id": req["id"],
         "created": req["created"],
         "prompt": req["prompt"],
-        "prompt_used": req.get("prompt_en") if result["engine"] == "hf" else req.get("prompt_short") or req.get("prompt_en"),
-        "enhanced_by": req.get("enhanced_by"),
+        "prompt_used": result.get("prompt_used"),
         "engine": result["engine"],
         "model": result["model"],
         "seed": result.get("seed"),
