@@ -22,7 +22,7 @@ branche ai-videos (mp4 + vignette + métadonnées) ──► déploiement GitHub
 | **GitHub Pages** | Interface + galerie (site statique : il ne peut pas exécuter de modèle) | Gratuit pour un dépôt public |
 | **GitHub Actions** | Orchestration, encodage, publication | Minutes **illimitées** sur un dépôt public (runner 4 vCPU / 16 Go, **sans GPU**) |
 | **Spaces Hugging Face ZeroGPU** | Le calcul GPU : LTX-2.5 / LTX-2.3 de Lightricks, vidéo **avec son** | Quota GPU quotidien gratuit (quelques minutes/jour, soit plusieurs clips) |
-| **AnimateDiff-Lightning (CPU)** | Repli quand le quota GPU est épuisé | Illimité, mais ~10–20 min par clip et qualité inférieure |
+| **AnimateDiff-Lightning (CPU)** | Repli quand le quota GPU est épuisé | Illimité, mais ~15 min par clip et qualité/mouvement nettement inférieurs |
 
 Les runners gratuits de GitHub n'ont pas de GPU : exécuter un vrai modèle vidéo
 moderne directement dans Actions prendrait des heures. La solution consiste donc à
@@ -69,13 +69,15 @@ génération via une issue : un inconnu ne peut pas consommer votre quota.
 | Modèle | LTX-2.5, sinon LTX-2.3, sinon LTX-Video 0.9 (Lightricks) | AnimateDiff-Lightning 4 étapes + epiCRealism (SD 1.5) |
 | Son | Oui (LTX-2.x) | Non |
 | Résolution | 768×448 à 896×512 (16:9), 640×640 | 640×384, 512×512 |
-| Durée | 2–8 s | 2–6 s (8 images/s interpolées à 24) |
-| Temps | ~30 s à 2 min | ~10–20 min |
+| Durée | 2–8 s (bornée par le Space) | 2–4 s (16 images ralenties puis interpolées à 24 i/s) |
+| Temps mesuré | 20 s à 1 min 15 | ~13–15 min (runner 4 vCPU) |
 | Limite | Quota ZeroGPU du compte HF (recharge 24 h après la 1re utilisation) | Aucune (timeout 90 min) |
 | Prompt | Enrichi par l'« enhancer » du Space ; le français est accepté | Traduit en anglais en local (opus-mt-fr-en) |
 
-En mode `auto`, si tous les Spaces échouent (quota épuisé, Space en panne), le
-workflow bascule automatiquement sur le CPU.
+Si un Space échoue (panne, erreur réseau, file d'attente bloquée plus de 10 min),
+le suivant de la liste est essayé ; en mode `auto`, si aucun ne répond ou si le
+quota est épuisé, le workflow bascule automatiquement sur le CPU. Le moteur CPU
+sert de filet de sécurité : image correcte, mais mouvement faible.
 
 ## Personnalisation
 
@@ -98,7 +100,8 @@ python ai-video/scripts/probe_spaces.py Lightricks/LTX-2.5    # un Space précis
 
 Variables d'environnement reconnues par `generate.py` : `AI_VIDEO_HF_LONG_SIDE`,
 `AI_VIDEO_CPU_STEPS` (1, 2, 4 ou 8), `AI_VIDEO_CPU_BASE` (modèle SD 1.5),
-`AI_VIDEO_CPU_LONG_SIDE`.
+`AI_VIDEO_CPU_LONG_SIDE`, `AI_VIDEO_CPU_FRAMES` (32 = clip plus long mais ~2× plus lent),
+`AI_VIDEO_HF_TIMEOUT` (secondes, défaut 600).
 
 ## Stockage
 
